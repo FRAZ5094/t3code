@@ -19,6 +19,7 @@ type PendingRequest = {
 
 type SubscriptionSet<TValue> = Set<(value: TValue) => void>;
 const REQUEST_TIMEOUT_MS = 30_000;
+const textDecoder = new TextDecoder();
 
 class WsNativeApiClient {
   private socket: WebSocket | null = null;
@@ -156,7 +157,7 @@ class WsNativeApiClient {
     }
 
     if (raw instanceof ArrayBuffer) {
-      return new TextDecoder().decode(raw);
+      return textDecoder.decode(raw);
     }
 
     if (raw instanceof Blob) {
