@@ -32,7 +32,7 @@ CLI flags:
 - `--version` — print CLI version.
 - `--help` — print CLI usage.
 
-`--cwd` (or positional path) must point to an existing directory; startup fails fast with a clear error otherwise.
+`--cwd` (or positional path) must be a non-empty value pointing to an existing directory; startup fails fast with a clear error otherwise.
 
 If default ports are busy, `t3` will automatically retry with the next available port pair unless ports are explicitly pinned via CLI flags or environment variables.
 
