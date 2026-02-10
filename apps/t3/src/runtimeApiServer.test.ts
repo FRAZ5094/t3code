@@ -181,6 +181,28 @@ describe("runtimeApiServer", () => {
     ]);
   });
 
+  it("rejects startup when launchCwd does not exist", async () => {
+    const missingPath = path.join(process.cwd(), `missing-launch-cwd-${Date.now()}`);
+    await expect(
+      startRuntimeApiServer({
+        port: 0,
+        launchCwd: missingPath,
+      }),
+    ).rejects.toThrow("Invalid launchCwd: directory does not exist");
+  });
+
+  it("rejects startup when launchCwd is not a directory", async () => {
+    const tempDir = mkdtempSync(path.join(os.tmpdir(), "t3-launch-cwd-file-"));
+    const filePath = path.join(tempDir, "launch.txt");
+    writeFileSync(filePath, "not-a-directory", "utf8");
+    await expect(
+      startRuntimeApiServer({
+        port: 0,
+        launchCwd: filePath,
+      }),
+    ).rejects.toThrow("Invalid launchCwd: expected directory path");
+  });
+
   it("rejects empty auth token configuration", async () => {
     await expect(
       startRuntimeApiServer({

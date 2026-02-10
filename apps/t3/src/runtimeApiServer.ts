@@ -333,6 +333,15 @@ export async function startRuntimeApiServer(
   options: RuntimeApiServerOptions,
 ): Promise<RuntimeApiServer> {
   const launchCwd = path.resolve(options.launchCwd);
+  let launchCwdStats: fs.Stats;
+  try {
+    launchCwdStats = fs.statSync(launchCwd);
+  } catch {
+    throw new Error(`Invalid launchCwd: directory does not exist: ${launchCwd}`);
+  }
+  if (!launchCwdStats.isDirectory()) {
+    throw new Error(`Invalid launchCwd: expected directory path: ${launchCwd}`);
+  }
   const authToken = options.authToken?.trim();
   if (options.authToken !== undefined && !authToken) {
     throw new Error("Invalid runtime auth token: expected non-empty string.");
