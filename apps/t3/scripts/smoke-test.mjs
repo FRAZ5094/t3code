@@ -1531,6 +1531,55 @@ async function main() {
         }),
       );
     });
+
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error("Smoke test failed: unknown-method websocket request timed out.")),
+        20_000,
+      );
+      const onMessage = (event) => {
+        let message;
+        try {
+          message = JSON.parse(String(event.data));
+        } catch {
+          return;
+        }
+
+        if (message.type !== "response" || message.id !== "smoke-unknown-method") {
+          return;
+        }
+
+        ws.removeEventListener("message", onMessage);
+        clearTimeout(timer);
+
+        if (
+          message.ok !== false ||
+          message.error?.code !== "request_failed" ||
+          typeof message.error?.message !== "string" ||
+          !message.error.message.includes("Unknown API method")
+        ) {
+          reject(
+            new Error(
+              `Smoke test failed: expected structured unknown-method error response, got ${JSON.stringify(
+                message,
+              )}.`,
+            ),
+          );
+          return;
+        }
+
+        resolve();
+      };
+
+      ws.addEventListener("message", onMessage);
+      ws.send(
+        JSON.stringify({
+          type: "request",
+          id: "smoke-unknown-method",
+          method: "unknown.method",
+        }),
+      );
+    });
     ws.close();
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : "Smoke test failed."}\n`);
