@@ -556,6 +556,41 @@ describe("wsNativeApi", () => {
     await expect(secondRequest).resolves.toEqual([]);
   });
 
+  it("rejects all concurrent pending requests on unauthorized disconnect and then reconnects", async () => {
+    setWindowSearch("?ws=ws%3A%2F%2F127.0.0.1%3A4468");
+    const { getOrCreateWsNativeApi } = await import("./wsNativeApi");
+    const api = getOrCreateWsNativeApi();
+
+    const firstPending = api.todos.list();
+    const secondPending = api.app.health();
+    const socket = MockWebSocket.instances[0];
+    await waitForCondition(() => (socket?.sentMessages.length ?? 0) >= 2);
+    socket?.closeWith({
+      code: WS_CLOSE_CODES.unauthorized,
+      reason: WS_CLOSE_REASONS.unauthorized,
+    });
+
+    await expect(firstPending).rejects.toThrow("websocket disconnected (unauthorized)");
+    await expect(secondPending).rejects.toThrow("websocket disconnected (unauthorized)");
+
+    const recoveryRequest = api.todos.list();
+    await waitForCondition(() => MockWebSocket.instances.length >= 2);
+    const recoverySocket = MockWebSocket.instances[1];
+    await waitForCondition(() => (recoverySocket?.sentMessages.length ?? 0) > 0);
+    const requestEnvelope = JSON.parse(recoverySocket?.sentMessages[0] ?? "{}") as {
+      id: string;
+    };
+    recoverySocket?.emitMessage(
+      JSON.stringify({
+        type: "response",
+        id: requestEnvelope.id,
+        ok: true,
+        result: [],
+      }),
+    );
+    await expect(recoveryRequest).resolves.toEqual([]);
+  });
+
   it("falls back to generic disconnect message when close code is missing", async () => {
     setWindowSearch("?ws=ws%3A%2F%2F127.0.0.1%3A4455");
     const { getOrCreateWsNativeApi } = await import("./wsNativeApi");
