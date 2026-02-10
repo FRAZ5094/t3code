@@ -54,6 +54,22 @@ describe("parseCliOptions", () => {
     expect(options.webPortLocked).toBe(true);
   });
 
+  it("trims tabbed environment variable port values before parsing", () => {
+    const options = parseCliOptions(
+      [],
+      {
+        T3_BACKEND_PORT: "\t5001\t",
+        T3_WEB_PORT: "\t5002\t",
+      },
+      "/workspace",
+    );
+
+    expect(options.backendPort).toBe(5001);
+    expect(options.webPort).toBe(5002);
+    expect(options.backendPortLocked).toBe(true);
+    expect(options.webPortLocked).toBe(true);
+  });
+
   it("accepts flexible truthy values for T3_NO_OPEN", () => {
     const options = parseCliOptions(
       [],
