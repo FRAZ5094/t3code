@@ -48,6 +48,7 @@ describe("runtime architecture boundaries", () => {
     const smokeScriptPath = path.resolve(import.meta.dirname, "..", "scripts", "smoke-test.mjs");
     const smokeScriptSource = fs.readFileSync(smokeScriptPath, "utf8");
 
+    expect(smokeScriptSource).toContain("../../../test-support/fakeCodexAppServer.mjs");
     expect(smokeScriptSource).toContain("createFakeCodexAppServerBinary");
     expect(smokeScriptSource).toContain("PATH: `${fakeCodex.tempDir}${path.delimiter}");
     expect(smokeScriptSource).toContain("fs.rmSync(fakeCodex.tempDir");
