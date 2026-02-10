@@ -1357,6 +1357,9 @@ async function main() {
     );
     await waitForUnauthorizedCloseWithoutMessages(wrongTokenWs);
 
+    const emptyTokenWs = new WebSocket(`${parsedWsUrl.origin}${parsedWsUrl.pathname}?token=`);
+    await waitForUnauthorizedCloseWithoutMessages(emptyTokenWs);
+
     const ws = new WebSocket(wsUrl);
     await new Promise((resolve, reject) => {
       let sawHello = false;
