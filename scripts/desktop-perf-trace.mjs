@@ -351,6 +351,9 @@ function inferDesktopPerfTimeoutHint(logChunks) {
   if (lowered.includes("error while loading shared libraries")) {
     return "Electron failed to start due missing Linux shared libraries.";
   }
+  if (lowered.includes("setuid_sandbox_host.cc") || lowered.includes("chrome-sandbox")) {
+    return "Electron sandbox setup failed on Linux CI (setuid sandbox helper).";
+  }
   if (lowered.includes("no usable sandbox")) {
     return "Electron sandbox failed to initialize in CI.";
   }

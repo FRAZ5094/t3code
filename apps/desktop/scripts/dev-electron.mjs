@@ -107,6 +107,11 @@ const command = process.platform === "win32" ? "electronmon.cmd" : "electronmon"
 const childEnv = { ...process.env };
 delete childEnv.ELECTRON_RUN_AS_NODE;
 
+if (process.platform === "linux" && !childEnv.ELECTRON_DISABLE_SANDBOX) {
+  childEnv.ELECTRON_DISABLE_SANDBOX = "1";
+  console.log("[dev-electron] enabling ELECTRON_DISABLE_SANDBOX=1 on Linux");
+}
+
 const child = spawn(command, ["dist-electron/main.js"], {
   stdio: "inherit",
   env: {
