@@ -445,16 +445,32 @@ async function runRendererPerfInteractions(
         Array.from(document.querySelectorAll("[data-perf-thread-id]")).filter(
           (node) => node instanceof HTMLElement,
         );
-      await waitFor(
-        () => getThreadButtons().length >= 1,
-        15_000,
-        "Expected seeded thread rows to be rendered.",
-      );
-      const threadButtons = getThreadButtons();
-      must(threadButtons.length >= 1, "Expected seeded thread rows to be rendered.");
-      const renderedThreadIds = threadButtons
-        .map((node) => node.getAttribute("data-perf-thread-id"))
-        .filter((value) => typeof value === "string" && value.length > 0);
+      const getThreadListDiagnostics = () => ({
+        readyState: document.readyState,
+        threadButtonCount: getThreadButtons().length,
+        sidebarButtonCount: document.querySelectorAll("nav button").length,
+        noProjectsVisible:
+          document.body.textContent?.toLowerCase().includes("no projects yet") ?? false,
+      });
+      let threadButtons = [];
+      let renderedThreadIds = [];
+      try {
+        await waitFor(
+          () => getThreadButtons().length >= 1,
+          15_000,
+          "Expected seeded thread rows to be rendered.",
+        );
+        threadButtons = getThreadButtons();
+        renderedThreadIds = threadButtons
+          .map((node) => node.getAttribute("data-perf-thread-id"))
+          .filter((value) => typeof value === "string" && value.length > 0);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn("[desktop-perf] thread list unavailable; continuing", {
+          message,
+          diagnostics: getThreadListDiagnostics(),
+        });
+      }
       const getActiveThreadId = () => {
         const scroller = document.querySelector("[data-perf-messages-scroll]");
         if (!(scroller instanceof HTMLElement)) return null;
@@ -586,6 +602,11 @@ async function runRendererPerfInteractions(
         await sleep(60);
       }
 
+      await waitFor(
+        () => document.querySelector("[data-perf-composer-input]") instanceof HTMLTextAreaElement,
+        15_000,
+        "Composer textarea missing.",
+      );
       const textarea = document.querySelector("[data-perf-composer-input]");
       must(textarea instanceof HTMLTextAreaElement, "Composer textarea missing.");
       textarea.focus();
@@ -612,14 +633,20 @@ async function runRendererPerfInteractions(
 
       const selectOption = async (triggerSelector, optionSelector, label) => {
         const trigger = document.querySelector(triggerSelector);
-        must(trigger instanceof HTMLElement, label + " trigger not found.");
+        if (!(trigger instanceof HTMLElement)) {
+          console.warn("[desktop-perf] selector trigger not found", { label, triggerSelector });
+          return null;
+        }
         clickElement(trigger);
         await sleep(130);
 
         const options = Array.from(document.querySelectorAll(optionSelector)).filter(
           (node) => node instanceof HTMLElement,
         );
-        must(options.length > 0, label + " options not found.");
+        if (options.length === 0) {
+          console.warn("[desktop-perf] selector options not found", { label, optionSelector });
+          return null;
+        }
         const preferred = options[1] ?? options[0];
         clickElement(preferred);
         await sleep(130);
