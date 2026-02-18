@@ -855,11 +855,13 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         threads: updateThread(state.threads, target.id, (t) => {
           const nextEvents = [event, ...t.events];
-          const derivedTurnDiffSummaries = deriveTurnDiffSummaries(nextEvents);
-          const turnDiffSummaries = mergeTurnDiffSummaries(
-            t.turnDiffSummaries,
-            derivedTurnDiffSummaries,
-          );
+          const shouldRederiveDiffs =
+            event.method === "turn/completed" ||
+            (event.method === "item/completed" &&
+              asString(asObject(asObject(event.payload)?.item)?.type) === "agentMessage");
+          const turnDiffSummaries = shouldRederiveDiffs
+            ? mergeTurnDiffSummaries(t.turnDiffSummaries, deriveTurnDiffSummaries(nextEvents))
+            : t.turnDiffSummaries;
           const eventThreadId = getEventThreadId(event);
           const shouldRebindIdentity =
             event.method === "thread/started" && t.session?.status === "connecting";
@@ -1037,7 +1039,11 @@ export function reducer(state: AppState, action: Action): AppState {
                   existing.deletions === file.deletions
                 );
               });
-            if (summary.unifiedDiff === checkpointDiff && filesUnchanged && summary.checkpointDiffLoaded) {
+            if (
+              summary.unifiedDiff === checkpointDiff &&
+              filesUnchanged &&
+              summary.checkpointDiffLoaded
+            ) {
               return summary;
             }
 

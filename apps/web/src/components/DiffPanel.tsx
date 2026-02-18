@@ -5,11 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { isElectron } from "../env";
 import { useNativeApi } from "../hooks/useNativeApi";
 import { useTheme } from "../hooks/useTheme";
-import {
-  deriveTurnDiffSummaries,
-  formatTimestamp,
-  inferCheckpointTurnCountByTurnId,
-} from "../session-logic";
+import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
+import { formatTimestamp } from "../session-logic";
 import { useStore } from "../store";
 import { Button } from "./ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
@@ -84,17 +81,8 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const [diffRenderMode, setDiffRenderMode] = useState<DiffRenderMode>("stacked");
   const patchViewportRef = useRef<HTMLDivElement>(null);
   const activeThread = state.threads.find((thread) => thread.id === state.activeThreadId);
-  const turnDiffSummaries = useMemo(
-    () =>
-      activeThread?.turnDiffSummaries.length
-        ? activeThread.turnDiffSummaries
-        : deriveTurnDiffSummaries(activeThread?.events ?? []),
-    [activeThread?.events, activeThread?.turnDiffSummaries],
-  );
-  const inferredCheckpointTurnCountByTurnId = useMemo(
-    () => inferCheckpointTurnCountByTurnId(turnDiffSummaries),
-    [turnDiffSummaries],
-  );
+  const { turnDiffSummaries, inferredCheckpointTurnCountByTurnId } =
+    useTurnDiffSummaries(activeThread);
 
   useEffect(() => {
     setCheckpointDiffByKey({});

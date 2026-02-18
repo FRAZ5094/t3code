@@ -43,9 +43,7 @@ import {
   countDiffStat,
   derivePendingApprovals,
   derivePhase,
-  deriveTurnDiffSummaries,
   deriveTimelineEntries,
-  inferCheckpointTurnCountByTurnId,
   type TurnDiffSummary,
   type PendingApproval,
   deriveWorkLogEntries,
@@ -54,6 +52,7 @@ import {
   formatTimestamp,
 } from "../session-logic";
 import { isScrollContainerNearBottom } from "../chat-scroll";
+import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { useStore } from "../store";
 import type { ChatImageAttachment } from "../types";
 import BranchToolbar from "./BranchToolbar";
@@ -177,7 +176,8 @@ export default function ChatView() {
   const activeThread = state.threads.find((t) => t.id === state.activeThreadId);
   const activeThreadId = activeThread?.id ?? null;
   const activeSessionId = activeThread?.session?.sessionId;
-  const activeThreadRuntimeId = activeThread?.codexThreadId ?? activeThread?.session?.threadId ?? null;
+  const activeThreadRuntimeId =
+    activeThread?.codexThreadId ?? activeThread?.session?.threadId ?? null;
   const activeProject = state.projects.find((p) => p.id === activeThread?.projectId);
   const selectedModel = resolveModelSlug(
     activeThread?.model ?? activeProject?.model ?? DEFAULT_MODEL,
@@ -211,13 +211,8 @@ export default function ChatView() {
     () => deriveTimelineEntries(activeThread?.messages ?? [], workLogEntries),
     [activeThread?.messages, workLogEntries],
   );
-  const turnDiffSummaries = useMemo(
-    () =>
-      activeThread?.turnDiffSummaries.length
-        ? activeThread.turnDiffSummaries
-        : deriveTurnDiffSummaries(activeThread?.events ?? []),
-    [activeThread?.events, activeThread?.turnDiffSummaries],
-  );
+  const { turnDiffSummaries, inferredCheckpointTurnCountByTurnId } =
+    useTurnDiffSummaries(activeThread);
   const turnDiffSummaryByAssistantMessageId = useMemo(() => {
     const byMessageId = new Map<string, TurnDiffSummary>();
     for (const summary of turnDiffSummaries) {
@@ -226,10 +221,6 @@ export default function ChatView() {
     }
     return byMessageId;
   }, [turnDiffSummaries]);
-  const inferredCheckpointTurnCountByTurnId = useMemo(
-    () => inferCheckpointTurnCountByTurnId(turnDiffSummaries),
-    [turnDiffSummaries],
-  );
   const revertTurnCountByUserMessageId = useMemo(() => {
     const byUserMessageId = new Map<string, number>();
     for (let index = 0; index < timelineEntries.length; index += 1) {
@@ -299,7 +290,8 @@ export default function ChatView() {
     }
 
     const turnSummariesNeedingDiff = turnDiffSummaries.filter(
-      (summary) => !summary.checkpointDiffLoaded && inferredCheckpointTurnCountByTurnId[summary.turnId],
+      (summary) =>
+        !summary.checkpointDiffLoaded && inferredCheckpointTurnCountByTurnId[summary.turnId],
     );
     const requestedSummaries = turnSummariesNeedingDiff.filter((summary) => {
       const requestKey = `${activeThreadId}:${summary.turnId}`;
@@ -919,7 +911,15 @@ export default function ChatView() {
         setIsConnecting(false);
       }
     },
-    [activeProject, activeThread, api, dispatch, runtimeApprovalPolicy, runtimeSandboxMode, selectedModel],
+    [
+      activeProject,
+      activeThread,
+      api,
+      dispatch,
+      runtimeApprovalPolicy,
+      runtimeSandboxMode,
+      selectedModel,
+    ],
   );
 
   useEffect(() => {
@@ -930,14 +930,16 @@ export default function ChatView() {
     const selectedDiffTurnId =
       state.diffOpen && state.diffThreadId === activeThreadId ? state.diffTurnId : null;
     const selectedDiffTurn =
-      turnDiffSummaries.find((summary) => summary.turnId === selectedDiffTurnId) ?? turnDiffSummaries[0];
+      turnDiffSummaries.find((summary) => summary.turnId === selectedDiffTurnId) ??
+      turnDiffSummaries[0];
     const selectedTurnMissingPatchBody = Boolean(
       selectedDiffTurn &&
-        !selectedDiffTurn.unifiedDiff &&
-        selectedDiffTurn.files.every((file) => !file.diff),
+      !selectedDiffTurn.unifiedDiff &&
+      selectedDiffTurn.files.every((file) => !file.diff),
     );
     const hasPendingDiffHydration =
-      turnDiffSummaries.some((summary) => !summary.checkpointDiffLoaded) || selectedTurnMissingPatchBody;
+      turnDiffSummaries.some((summary) => !summary.checkpointDiffLoaded) ||
+      selectedTurnMissingPatchBody;
     if (!hasPendingDiffHydration) return;
 
     const requestKey = `${activeThreadId}:${activeThreadRuntimeId ?? "none"}`;
@@ -1750,7 +1752,9 @@ const MessagesTimeline = memo(function MessagesTimeline({
   if (!hasMessages && !isWorking) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-sm text-muted-foreground/30">Send a message to start the conversation.</p>
+        <p className="text-sm text-muted-foreground/30">
+          Send a message to start the conversation.
+        </p>
       </div>
     );
   }
@@ -1918,7 +1922,9 @@ const MessagesTimeline = memo(function MessagesTimeline({
                 }
               />
               {(() => {
-                const turnSummary = turnDiffSummaryByAssistantMessageId.get(timelineEntry.message.id);
+                const turnSummary = turnDiffSummaryByAssistantMessageId.get(
+                  timelineEntry.message.id,
+                );
                 if (!turnSummary) return null;
                 const isCheckpointDiffLoading =
                   !turnSummary.checkpointDiffLoaded && turnSummary.files.length === 0;
@@ -1964,7 +1970,9 @@ const MessagesTimeline = memo(function MessagesTimeline({
                         type="button"
                         size="xs"
                         variant="outline"
-                        onClick={() => onOpenTurnDiff(turnSummary.turnId, turnSummary.files[0]?.path)}
+                        onClick={() =>
+                          onOpenTurnDiff(turnSummary.turnId, turnSummary.files[0]?.path)
+                        }
                       >
                         View diff
                       </Button>
