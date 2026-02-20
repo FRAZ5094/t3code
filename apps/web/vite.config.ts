@@ -4,6 +4,8 @@ import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import { defineConfig } from "vite";
 
 const port = Number(process.env.PORT ?? 5173);
+const devServerHost = process.env.VITE_DEV_SERVER_HOST ?? "localhost";
+const hmrHost = process.env.VITE_HMR_HOST ?? "localhost";
 
 export default defineConfig({
   plugins: [
@@ -29,6 +31,7 @@ export default defineConfig({
     tsconfigPaths: true,
   },
   server: {
+    host: devServerHost,
     port,
     strictPort: true,
     hmr: {
@@ -36,7 +39,7 @@ export default defineConfig({
       // inside Electron's BrowserWindow. Vite 8 uses console.debug for
       // connection logs — enable "Verbose" in DevTools to see them.
       protocol: "ws",
-      host: "localhost",
+      host: hmrHost,
     },
   },
   build: {

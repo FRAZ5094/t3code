@@ -63,6 +63,19 @@ bun run dist:desktop:dmg
 npx t3
 ```
 
+## Remote usage (phone/tablet/laptop)
+
+To run the server on one device and control it from another (for example over Tailscale), use:
+
+- `docs/remote-access.md`
+
+This includes:
+
+- architecture and security model
+- production setup for remote control
+- remote dev setup with hot reload
+- troubleshooting for cross-device connectivity
+
 ## Scripts
 
 - `bun run dev` — Starts contracts, server, and web in `turbo watch` mode.

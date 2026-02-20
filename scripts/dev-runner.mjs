@@ -58,6 +58,19 @@ function resolveOffset() {
   return { offset, source: `hashed T3CODE_DEV_INSTANCE=${seed}` };
 }
 
+function resolvePublicHost() {
+  const rawHost = process.env.T3CODE_PUBLIC_HOST?.trim();
+  if (!rawHost) return undefined;
+
+  if (rawHost.includes("://") || rawHost.includes("/")) {
+    throw new Error(
+      `Invalid T3CODE_PUBLIC_HOST: ${rawHost}. Use only a host or IP (no protocol/path).`,
+    );
+  }
+
+  return rawHost;
+}
+
 function main() {
   const mode = process.argv[2];
   const isDryRun = process.argv.includes("--dry-run");
@@ -69,6 +82,9 @@ function main() {
   const { offset, source } = resolveOffset();
   const serverPort = BASE_SERVER_PORT + offset;
   const webPort = BASE_WEB_PORT + offset;
+  const publicHost = resolvePublicHost();
+  const wsHost = publicHost ?? "localhost";
+  const webHost = publicHost ?? "localhost";
 
   if (serverPort > 65535 || webPort > 65535) {
     throw new Error(
@@ -81,15 +97,22 @@ function main() {
     T3CODE_PORT: String(serverPort),
     PORT: String(webPort),
     ELECTRON_RENDERER_PORT: String(webPort),
-    VITE_WS_URL: `ws://localhost:${serverPort}`,
-    VITE_DEV_SERVER_URL: `http://localhost:${webPort}`,
+    VITE_WS_URL: `ws://${wsHost}:${serverPort}`,
+    VITE_DEV_SERVER_URL: `http://${webHost}:${webPort}`,
   };
+
+  if (publicHost) {
+    env.VITE_DEV_SERVER_HOST = "0.0.0.0";
+    env.VITE_HMR_HOST = publicHost;
+  }
+
   if (mode === "dev" && !env.T3CODE_LOG_WS_EVENTS) {
     env.T3CODE_LOG_WS_EVENTS = "1";
   }
 
   console.info(
-    `[dev-runner] mode=${mode} source=${source} serverPort=${serverPort} webPort=${webPort}`,
+    `[dev-runner] mode=${mode} source=${source} serverPort=${serverPort} webPort=${webPort}` +
+      `${publicHost ? ` publicHost=${publicHost}` : ""}`,
   );
 
   if (isDryRun) {

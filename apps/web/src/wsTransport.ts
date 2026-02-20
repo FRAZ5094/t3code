@@ -11,6 +11,56 @@ interface PendingRequest {
 const REQUEST_TIMEOUT_MS = 60_000;
 const RECONNECT_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000];
 
+interface WsUrlResolutionInput {
+  explicitUrl?: string;
+  bridgeUrl?: string | null;
+  envUrl?: string;
+  pageUrl: string;
+  pageProtocol: string;
+  pageHostname: string;
+  pagePort: string;
+}
+
+function normalizeUrl(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function defaultWsUrlForPage(protocol: string, hostname: string, port: string): string {
+  const wsProtocol = protocol === "https:" ? "wss" : "ws";
+  const authority = port.length > 0 ? `${hostname}:${port}` : hostname;
+  return `${wsProtocol}://${authority}`;
+}
+
+export function appendTokenFromPageUrl(wsUrl: string, pageUrl: string): string {
+  try {
+    const page = new URL(pageUrl);
+    const token = page.searchParams.get("token")?.trim();
+    if (!token) return wsUrl;
+
+    const resolvedWsUrl = new URL(wsUrl, page.origin);
+    if (!resolvedWsUrl.searchParams.has("token")) {
+      resolvedWsUrl.searchParams.set("token", token);
+    }
+    return resolvedWsUrl.toString();
+  } catch {
+    return wsUrl;
+  }
+}
+
+export function resolveWsUrl(input: WsUrlResolutionInput): string {
+  const explicitUrl = normalizeUrl(input.explicitUrl);
+  if (explicitUrl) return explicitUrl;
+
+  const baseUrl =
+    normalizeUrl(input.bridgeUrl) ??
+    normalizeUrl(input.envUrl) ??
+    defaultWsUrlForPage(input.pageProtocol, input.pageHostname, input.pagePort);
+
+  return appendTokenFromPageUrl(baseUrl, input.pageUrl);
+}
+
 export class WsTransport {
   private ws: WebSocket | null = null;
   private nextId = 1;
@@ -26,13 +76,15 @@ export class WsTransport {
     // In dev mode, VITE_WS_URL points to the server's WebSocket endpoint.
     // In production, the page is served by the WS server on the same host:port.
     const envUrl = import.meta.env.VITE_WS_URL as string | undefined;
-    this.url =
-      url ??
-      (bridgeUrl && bridgeUrl.length > 0
-        ? bridgeUrl
-        : envUrl && envUrl.length > 0
-          ? envUrl
-          : `ws://${window.location.hostname}:${window.location.port}`);
+    this.url = resolveWsUrl({
+      explicitUrl: url,
+      bridgeUrl,
+      envUrl,
+      pageUrl: window.location.href,
+      pageProtocol: window.location.protocol,
+      pageHostname: window.location.hostname,
+      pagePort: window.location.port,
+    });
     this.connect();
   }
 
