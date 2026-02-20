@@ -415,6 +415,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const terminalOpenByThreadRef = useRef<Record<string, boolean>>({});
   const checkpointHydrationSessionRequestRef = useRef(new Set<string>());
   const checkpointTurnCountSyncFingerprintRef = useRef(new Map<string, string>());
+  const terminalStateSyncFingerprintRef = useRef(new Map<string, string>());
 
   const activeThread = state.threads.find((t) => t.id === threadId);
   const diffSearch = useMemo(
@@ -763,6 +764,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
   );
   const hasReachedTerminalLimit =
     (activeThread?.terminalIds.length ?? 0) >= MAX_THREAD_TERMINAL_COUNT;
+  const activeThreadTerminalSyncId = activeThread?.id;
+  const activeThreadTerminalSyncOpen = activeThread?.terminalOpen;
+  const activeThreadTerminalSyncHeight = activeThread?.terminalHeight;
+  const activeThreadTerminalSyncIds = activeThread?.terminalIds;
+  const activeThreadTerminalSyncActiveId = activeThread?.activeTerminalId;
+  const activeThreadTerminalSyncGroups = activeThread?.terminalGroups;
+  const activeThreadTerminalSyncActiveGroupId = activeThread?.activeTerminalGroupId;
 
   useEffect(() => {
     if (!api || !activeThread) return;
@@ -796,27 +804,49 @@ export default function ChatView({ threadId }: ChatViewProps) {
   }, [activeThread?.id, activeThread?.branch, activeThread?.worktreePath, api]);
 
   useEffect(() => {
-    if (!api || !activeThread) return;
+    if (
+      !api ||
+      !activeThreadTerminalSyncId ||
+      activeThreadTerminalSyncOpen === undefined ||
+      activeThreadTerminalSyncHeight === undefined ||
+      activeThreadTerminalSyncIds === undefined ||
+      activeThreadTerminalSyncActiveId === undefined ||
+      activeThreadTerminalSyncGroups === undefined
+    ) {
+      return;
+    }
+    const payload = {
+      threadId: activeThreadTerminalSyncId,
+      terminalOpen: activeThreadTerminalSyncOpen,
+      terminalHeight: activeThreadTerminalSyncHeight,
+      terminalIds: activeThreadTerminalSyncIds,
+      activeTerminalId: activeThreadTerminalSyncActiveId,
+      terminalGroups: activeThreadTerminalSyncGroups,
+      ...(activeThreadTerminalSyncActiveGroupId !== undefined
+        ? { activeTerminalGroupId: activeThreadTerminalSyncActiveGroupId }
+        : {}),
+    };
+    const fingerprint = JSON.stringify(payload);
+    const previousFingerprint = terminalStateSyncFingerprintRef.current.get(payload.threadId);
+    if (previousFingerprint === fingerprint) return;
+    terminalStateSyncFingerprintRef.current.set(payload.threadId, fingerprint);
     void api.threads
-      .updateTerminalState({
-        threadId: activeThread.id,
-        terminalOpen: activeThread.terminalOpen,
-        terminalHeight: activeThread.terminalHeight,
-        terminalIds: activeThread.terminalIds,
-        activeTerminalId: activeThread.activeTerminalId,
-        terminalGroups: activeThread.terminalGroups,
-        activeTerminalGroupId: activeThread.activeTerminalGroupId,
-      })
-      .catch(() => undefined);
+      .updateTerminalState(payload)
+      .catch(() => {
+        const currentFingerprint = terminalStateSyncFingerprintRef.current.get(payload.threadId);
+        if (currentFingerprint === fingerprint) {
+          terminalStateSyncFingerprintRef.current.delete(payload.threadId);
+        }
+      });
   }, [
-    activeThread?.id,
-    activeThread?.terminalOpen,
-    activeThread?.terminalHeight,
-    activeThread?.terminalIds,
-    activeThread?.activeTerminalId,
-    activeThread?.terminalGroups,
-    activeThread?.activeTerminalGroupId,
     api,
+    activeThreadTerminalSyncId,
+    activeThreadTerminalSyncOpen,
+    activeThreadTerminalSyncHeight,
+    activeThreadTerminalSyncIds,
+    activeThreadTerminalSyncActiveId,
+    activeThreadTerminalSyncGroups,
+    activeThreadTerminalSyncActiveGroupId,
   ]);
 
   const revokePreviewUrls = useCallback((images: Array<{ previewUrl?: string }>) => {

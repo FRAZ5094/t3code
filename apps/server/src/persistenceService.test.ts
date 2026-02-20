@@ -160,6 +160,7 @@ describe("PersistenceService", () => {
     ]);
     expect(thread?.messages[1]?.text).toBe("hi there");
     expect(thread?.turnDiffSummaries[0]?.turnId).toBe("turn-1");
+    expect(thread?.turnDiffSummaries[0]?.assistantMessageId).toBe("assistant-msg-1");
 
     const catchUp = service.catchUp({ afterSeq: 0 });
     expect(catchUp.events.length).toBeGreaterThan(0);
@@ -207,10 +208,31 @@ describe("PersistenceService", () => {
       ].join("\n"),
     });
 
+    service.ingestProviderEvent({
+      id: "evt-agent-msg-1",
+      kind: "notification",
+      provider: "codex",
+      sessionId: "sess-1",
+      createdAt: "2026-02-19T00:00:01.000Z",
+      method: "item/completed",
+      turnId: "turn-1",
+      itemId: "assistant-msg-1",
+      payload: {
+        item: {
+          type: "agentMessage",
+          id: "assistant-msg-1",
+          text: "done",
+        },
+        threadId: "runtime-thread-1",
+        turnId: "turn-1",
+      },
+    });
+
     const snapshot = service.loadSnapshot();
     const summary = snapshot.threads[0]?.turnDiffSummaries[0];
     expect(summary?.turnId).toBe("turn-1");
     expect(summary?.checkpointTurnCount).toBe(1);
+    expect(summary?.assistantMessageId).toBe("assistant-msg-1");
     expect(summary?.files[0]?.path).toBe("src/app.ts");
     expect(summary?.files[0]?.additions).toBe(2);
     expect(summary?.files[0]?.deletions).toBe(1);

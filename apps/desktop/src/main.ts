@@ -300,6 +300,48 @@ function backendEnv(): NodeJS.ProcessEnv {
   };
 }
 
+function resolveBackendLaunch(backendEntry: string): {
+  command: string;
+  args: string[];
+  env: NodeJS.ProcessEnv;
+} {
+  const runtimeOverride = process.env.T3CODE_BACKEND_RUNTIME?.trim();
+  if (runtimeOverride && runtimeOverride.length > 0) {
+    if (runtimeOverride === "electron-node") {
+      return {
+        command: process.execPath,
+        args: [backendEntry],
+        env: {
+          ...backendEnv(),
+          ELECTRON_RUN_AS_NODE: "1",
+        },
+      };
+    }
+    return {
+      command: runtimeOverride,
+      args: [backendEntry],
+      env: backendEnv(),
+    };
+  }
+
+  if (isDevelopment) {
+    return {
+      command: "bun",
+      args: [backendEntry],
+      env: backendEnv(),
+    };
+  }
+
+  return {
+    command: process.execPath,
+    args: [backendEntry],
+    env: {
+      ...backendEnv(),
+      ELECTRON_RUN_AS_NODE: "1",
+    },
+  };
+}
+
 function scheduleBackendRestart(reason: string): void {
   if (isQuitting || restartTimer) return;
 
@@ -322,14 +364,10 @@ function startBackend(): void {
     return;
   }
 
-  const child = spawn(process.execPath, [backendEntry], {
+  const launch = resolveBackendLaunch(backendEntry);
+  const child = spawn(launch.command, launch.args, {
     cwd: resolveBackendCwd(),
-    // In Electron main, process.execPath points to the Electron binary.
-    // Run the child in Node mode so this backend process does not become a GUI app instance.
-    env: {
-      ...backendEnv(),
-      ELECTRON_RUN_AS_NODE: "1",
-    },
+    env: launch.env,
     stdio: "inherit",
   });
   backendProcess = child;

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 
+import { openSqliteDatabase, type SqliteDatabase } from "./sqliteAdapter";
 import { runStateMigrations } from "./stateMigrations";
 
 export interface StateDbOptions {
@@ -10,12 +10,12 @@ export interface StateDbOptions {
 
 export class StateDb {
   readonly dbPath: string;
-  readonly db: DatabaseSync;
+  readonly db: SqliteDatabase;
 
   constructor(options: StateDbOptions) {
     this.dbPath = path.resolve(options.dbPath);
     fs.mkdirSync(path.dirname(this.dbPath), { recursive: true });
-    this.db = new DatabaseSync(this.dbPath);
+    this.db = openSqliteDatabase(this.dbPath);
     runStateMigrations(this.db);
   }
 

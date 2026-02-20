@@ -645,13 +645,15 @@ export function reducer(state: AppState, action: Action): AppState {
             updatedAt: message.createdAt,
             streaming: message.streaming,
           })) ?? [];
+        const payloadTurnDiffSummaries = Array.isArray(threadPayload?.turnDiffSummaries)
+          ? (threadPayload.turnDiffSummaries as Thread["turnDiffSummaries"])
+          : undefined;
         const bootstrapThread: StateBootstrapThread = {
           ...(threadPayload as unknown as Omit<StateBootstrapThread, "messages">),
           messages: existingStateMessages,
-          turnDiffSummaries:
-            (threadPayload?.turnDiffSummaries as Thread["turnDiffSummaries"] | undefined) ??
-            existing?.turnDiffSummaries ??
-            [],
+          turnDiffSummaries: payloadTurnDiffSummaries
+            ? mergeTurnDiffSummaries(existing?.turnDiffSummaries ?? [], payloadTurnDiffSummaries)
+            : existing?.turnDiffSummaries ?? [],
         };
         const nextThread = hydrateThreadFromBootstrap(bootstrapThread, existing);
         const nextThreads = existing

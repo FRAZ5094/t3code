@@ -34,8 +34,11 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
 
 let listeners: Array<() => void> = [];
 let cachedBackendSettings: BackendAppSettings = DEFAULT_BACKEND_APP_SETTINGS;
+let cachedBackendCacheKey = JSON.stringify(DEFAULT_BACKEND_APP_SETTINGS);
 let cachedLocalSettings = DEFAULT_LOCAL_APP_SETTINGS;
 let cachedLocalCacheKey: string | undefined;
+let cachedSnapshot: AppSettings = DEFAULT_APP_SETTINGS;
+let cachedSnapshotKey = `${cachedBackendCacheKey}|${cachedLocalCacheKey ?? ""}`;
 let backendHydrationPromise: Promise<void> | null = null;
 let backendHydrated = false;
 let backendUpdateSequence = 0;
@@ -44,6 +47,11 @@ function emitChange(): void {
   for (const listener of listeners) {
     listener();
   }
+}
+
+function setCachedBackendSettings(next: BackendAppSettings): void {
+  cachedBackendSettings = next;
+  cachedBackendCacheKey = JSON.stringify(next);
 }
 
 function parseLegacySettings(value: string | null): z.infer<typeof legacyAppSettingsSchema> | null {
@@ -152,7 +160,7 @@ async function hydrateBackendSettings(): Promise<void> {
       next = normalizeBackendSettings(await api.appSettings.update(migrationPatch));
     }
 
-    cachedBackendSettings = next;
+    setCachedBackendSettings(next);
     backendHydrated = true;
 
     if (legacySettings) {
@@ -178,10 +186,17 @@ async function hydrateBackendSettings(): Promise<void> {
 
 export function getAppSettingsSnapshot(): AppSettings {
   const localSettings = readLocalSettingsSnapshot();
-  return appSettingsSchema.parse({
+  const snapshotKey = `${cachedBackendCacheKey}|${cachedLocalCacheKey ?? ""}`;
+  if (snapshotKey === cachedSnapshotKey) {
+    return cachedSnapshot;
+  }
+
+  cachedSnapshot = appSettingsSchema.parse({
     ...cachedBackendSettings,
     ...localSettings,
   });
+  cachedSnapshotKey = snapshotKey;
+  return cachedSnapshot;
 }
 
 function subscribe(listener: () => void): () => void {
@@ -237,7 +252,7 @@ export function useAppSettings() {
         ...cachedBackendSettings,
         ...backendPatch,
       });
-      cachedBackendSettings = optimisticNext;
+      setCachedBackendSettings(optimisticNext);
       backendHydrated = true;
       didChange = true;
 
@@ -248,12 +263,12 @@ export function useAppSettings() {
           .update(backendPatch)
           .then((response) => {
             if (updateSequence !== backendUpdateSequence) return;
-            cachedBackendSettings = normalizeBackendSettings(response);
+            setCachedBackendSettings(normalizeBackendSettings(response));
             emitChange();
           })
           .catch(() => {
             if (updateSequence !== backendUpdateSequence) return;
-            cachedBackendSettings = previous;
+            setCachedBackendSettings(previous);
             emitChange();
           });
       }

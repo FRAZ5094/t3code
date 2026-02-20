@@ -171,6 +171,13 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+function normalizeProviderItemType(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const normalized = value.trim();
+  if (normalized.length === 0) return undefined;
+  return normalized.replace(/[_\-\s]+/g, "").toLowerCase();
+}
+
 function parseThreadIdFromEventPayload(payload: unknown): string | null {
   const record = asObject(payload);
   const threadId = asString(record?.threadId) ?? asString(record?.thread_id);
@@ -710,7 +717,22 @@ export class PersistenceService extends EventEmitter<PersistenceServiceEvents> {
       const parsedThread = this.parseJson(row.data_json, stateThreadSchema);
       if (!parsedThread) continue;
       const messages = this.listMessagesForThread(parsedThread.id);
-      const turnDiffSummaries = this.listTurnSummariesForThread(parsedThread.id);
+      const turnDiffSummaries = this.listTurnSummariesForThread(parsedThread.id).map((summary) => {
+        if (summary.assistantMessageId) {
+          return summary;
+        }
+        const assistantMessageId = this.findAssistantMessageIdForTurn({
+          turnId: summary.turnId,
+          runtimeThreadId: parsedThread.codexThreadId,
+        });
+        if (!assistantMessageId) {
+          return summary;
+        }
+        return stateTurnSummarySchema.parse({
+          ...summary,
+          assistantMessageId,
+        });
+      });
       threads.push({
         ...parsedThread,
         turnDiffSummaries,
@@ -1068,29 +1090,58 @@ export class PersistenceService extends EventEmitter<PersistenceServiceEvents> {
       if (event.method === "item/completed") {
         const payload = asObject(event.payload);
         const item = asObject(payload?.item);
-        if (asString(item?.type) === "agentMessage") {
+        if (normalizeProviderItemType(asString(item?.type)) === "agentmessage") {
           const messageId = asString(item?.id);
-          if (messageId) {
-            const existing = this.getMessageById(nextThread.id, messageId);
-            const fullText = asString(item?.text) ?? existing?.text ?? "";
-            const message = stateMessageSchema.parse({
-              id: messageId,
-              threadId: nextThread.id,
-              role: "assistant",
-              text: fullText,
-              createdAt: existing?.createdAt ?? event.createdAt,
-              updatedAt: event.createdAt,
-              streaming: false,
-            });
-            this.upsertMessageDocument(nextThread, message);
-            this.appendStateEvent(
-              pendingEvents,
-              "message.upsert",
-              `${nextThread.id}:${message.id}`,
-              { threadId: nextThread.id, message },
-              message.updatedAt,
-            );
+          if (!messageId) {
+            return;
           }
+
+          const existing = this.getMessageById(nextThread.id, messageId);
+          const fullText = asString(item?.text) ?? existing?.text ?? "";
+          const message = stateMessageSchema.parse({
+            id: messageId,
+            threadId: nextThread.id,
+            role: "assistant",
+            text: fullText,
+            createdAt: existing?.createdAt ?? event.createdAt,
+            updatedAt: event.createdAt,
+            streaming: false,
+          });
+          this.upsertMessageDocument(nextThread, message);
+          this.appendStateEvent(
+            pendingEvents,
+            "message.upsert",
+            `${nextThread.id}:${message.id}`,
+            { threadId: nextThread.id, message },
+            message.updatedAt,
+          );
+
+          const completedTurnId = parseTurnIdFromEvent(event) ?? nextThread.latestTurnId;
+          if (!completedTurnId) {
+            return;
+          }
+
+          const existingSummary = this.getTurnSummaryByTurnId(nextThread.id, completedTurnId);
+          if (!existingSummary || existingSummary.assistantMessageId === messageId) {
+            return;
+          }
+
+          const summary = this.upsertTurnSummary(
+            nextThread,
+            completedTurnId,
+            {
+              completedAt: existingSummary.completedAt,
+              assistantMessageId: messageId,
+            },
+            "merge",
+          );
+          this.appendStateEvent(
+            pendingEvents,
+            "turn_summary.upsert",
+            `${nextThread.id}:${summary.turnId}`,
+            { threadId: nextThread.id, turnSummary: summary },
+            summary.completedAt,
+          );
         }
       }
 
@@ -1123,12 +1174,19 @@ export class PersistenceService extends EventEmitter<PersistenceServiceEvents> {
         );
 
         if (completedTurnId) {
+          const assistantMessageId =
+            this.findAssistantMessageIdForTurn({
+              sessionId: event.sessionId,
+              turnId: completedTurnId,
+              runtimeThreadId,
+            }) ?? this.findLatestAssistantMessageIdForThread(nextThread.id);
           const summary = this.upsertTurnSummary(
             nextThread,
             completedTurnId,
             {
               completedAt: event.createdAt,
               ...(turnStatus ? { status: turnStatus } : {}),
+              ...(assistantMessageId ? { assistantMessageId } : {}),
             },
             "merge",
           );
@@ -1164,12 +1222,19 @@ export class PersistenceService extends EventEmitter<PersistenceServiceEvents> {
         const turnId = parseTurnIdFromEvent(event);
         const diff = asString(asObject(event.payload)?.diff);
         if (turnId && diff) {
+          const assistantMessageId =
+            this.findAssistantMessageIdForTurn({
+              sessionId: event.sessionId,
+              turnId,
+              runtimeThreadId,
+            }) ?? this.findLatestAssistantMessageIdForThread(nextThread.id);
           const summary = this.upsertTurnSummary(
             nextThread,
             turnId,
             {
               completedAt: event.createdAt,
               files: summarizeUnifiedDiff(diff),
+              ...(assistantMessageId ? { assistantMessageId } : {}),
             },
             "merge",
           );
@@ -1212,6 +1277,12 @@ export class PersistenceService extends EventEmitter<PersistenceServiceEvents> {
     }
 
     this.withTransaction((pendingEvents) => {
+      const assistantMessageId =
+        this.findAssistantMessageIdForTurn({
+          sessionId: input.sessionId,
+          turnId,
+          runtimeThreadId: input.runtimeThreadId,
+        }) ?? this.findLatestAssistantMessageIdForThread(thread.id);
       const summary = this.upsertTurnSummary(
         thread,
         turnId,
@@ -1220,6 +1291,7 @@ export class PersistenceService extends EventEmitter<PersistenceServiceEvents> {
           ...(input.status ? { status: input.status } : {}),
           checkpointTurnCount: input.checkpointTurnCount,
           files: summarizeUnifiedDiff(input.diff),
+          ...(assistantMessageId ? { assistantMessageId } : {}),
         },
         "replace",
       );
@@ -1573,6 +1645,83 @@ export class PersistenceService extends EventEmitter<PersistenceServiceEvents> {
     const row = this.getDocumentRowById(turnSummaryDocId(threadId, turnId));
     if (!row) return null;
     return this.parseJson(row.data_json, stateTurnSummarySchema);
+  }
+
+  private findAssistantMessageIdForTurn(input: {
+    turnId: string;
+    sessionId?: string;
+    runtimeThreadId?: string | null;
+  }): string | undefined {
+    const queries: Array<{ sql: string; params: unknown[] }> = [];
+    if (input.sessionId) {
+      queries.push({
+        sql: `SELECT item_id, payload_json
+              FROM provider_events
+              WHERE session_id = ? AND turn_id = ? AND method = 'item/completed'
+              ORDER BY created_at DESC;`,
+        params: [input.sessionId, input.turnId],
+      });
+    }
+    if (input.runtimeThreadId) {
+      queries.push({
+        sql: `SELECT item_id, payload_json
+              FROM provider_events
+              WHERE thread_id = ? AND turn_id = ? AND method = 'item/completed'
+              ORDER BY created_at DESC;`,
+        params: [input.runtimeThreadId, input.turnId],
+      });
+    }
+    queries.push({
+      sql: `SELECT item_id, payload_json
+            FROM provider_events
+            WHERE turn_id = ? AND method = 'item/completed'
+            ORDER BY created_at DESC;`,
+      params: [input.turnId],
+    });
+
+    for (const query of queries) {
+      const rows = this.db.prepare(query.sql).all(...query.params) as Array<{
+        item_id: string | null;
+        payload_json: string | null;
+      }>;
+      for (const row of rows) {
+        const payload = row.payload_json ? this.tryParseJson(row.payload_json) : null;
+        const item = asObject(asObject(payload)?.item);
+        const itemType = normalizeProviderItemType(asString(item?.type));
+        if (itemType !== "agentmessage") {
+          continue;
+        }
+        const messageId = asString(item?.id) ?? (row.item_id ?? undefined);
+        if (messageId) {
+          return messageId;
+        }
+      }
+    }
+
+    return undefined;
+  }
+
+  private findLatestAssistantMessageIdForThread(threadId: string): string | undefined {
+    const rows = this.db
+      .prepare(
+        `SELECT data_json
+         FROM documents
+         WHERE kind = 'message' AND thread_id = ?
+         ORDER BY sort_key DESC, updated_at DESC;`,
+      )
+      .all(threadId) as Array<{ data_json: string }>;
+
+    for (const row of rows) {
+      const message = this.parseJson(row.data_json, stateMessageSchema);
+      if (!message) {
+        continue;
+      }
+      if (message.role === "assistant") {
+        return message.id;
+      }
+    }
+
+    return undefined;
   }
 
   private listMessagesForThread(threadId: string): StateMessage[] {

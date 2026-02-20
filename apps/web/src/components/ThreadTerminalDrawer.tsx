@@ -252,6 +252,7 @@ function TerminalViewport({
           ),
         );
     });
+    let didReceiveRenderableEventSinceOpen = false;
 
     const themeObserver = new MutationObserver(() => {
       const activeTerminal = terminalRef.current;
@@ -279,9 +280,14 @@ function TerminalViewport({
           ...(runtimeEnv ? { env: runtimeEnv } : {}),
         });
         if (disposed) return;
-        activeTerminal.write("\u001bc");
-        if (snapshot.history.length > 0) {
-          activeTerminal.write(snapshot.history);
+        const shouldHydrateFromSnapshot =
+          snapshot.history.length > 0 || !didReceiveRenderableEventSinceOpen;
+        if (shouldHydrateFromSnapshot) {
+          // Avoid clearing output that arrived before open() resolved.
+          activeTerminal.write("\u001bc");
+          if (snapshot.history.length > 0) {
+            activeTerminal.write(snapshot.history);
+          }
         }
         if (autoFocus) {
           window.requestAnimationFrame(() => {
@@ -301,6 +307,10 @@ function TerminalViewport({
       if (event.threadId !== threadId || event.terminalId !== terminalId) return;
       const activeTerminal = terminalRef.current;
       if (!activeTerminal) return;
+
+      if (event.type !== "activity") {
+        didReceiveRenderableEventSinceOpen = true;
+      }
 
       if (event.type === "output") {
         activeTerminal.write(event.data);

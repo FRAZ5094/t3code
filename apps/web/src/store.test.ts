@@ -550,6 +550,61 @@ describe("store reducer thread continuity", () => {
     ]);
   });
 
+  it("does not clear persisted turn summaries on thread.upsert snapshots", () => {
+    const state = makeState(
+      makeThread({
+        turnDiffSummaries: [
+          {
+            turnId: "turn-1",
+            completedAt: "2026-02-09T00:00:01.000Z",
+            files: [{ path: "src/existing.ts", kind: "modified" }],
+            assistantMessageId: "msg-1",
+          },
+        ],
+      }),
+    );
+
+    const next = reducer(state, {
+      type: "APPLY_STATE_EVENT",
+      event: {
+        seq: 1,
+        eventType: "thread.upsert",
+        entityId: "thread-local-1",
+        createdAt: "2026-02-09T00:00:05.000Z",
+        payload: {
+          thread: {
+            id: "thread-local-1",
+            codexThreadId: "thr-1",
+            projectId: "project-1",
+            title: "Thread",
+            model: "gpt-5.3-codex",
+            terminalOpen: false,
+            terminalHeight: DEFAULT_THREAD_TERMINAL_HEIGHT,
+            terminalIds: [DEFAULT_THREAD_TERMINAL_ID],
+            runningTerminalIds: [],
+            activeTerminalId: DEFAULT_THREAD_TERMINAL_ID,
+            terminalGroups: [
+              {
+                id: `group-${DEFAULT_THREAD_TERMINAL_ID}`,
+                terminalIds: [DEFAULT_THREAD_TERMINAL_ID],
+              },
+            ],
+            activeTerminalGroupId: `group-${DEFAULT_THREAD_TERMINAL_ID}`,
+            createdAt: "2026-02-09T00:00:00.000Z",
+            updatedAt: "2026-02-09T00:00:05.000Z",
+            lastVisitedAt: "2026-02-09T00:00:05.000Z",
+            branch: null,
+            worktreePath: null,
+            turnDiffSummaries: [],
+          },
+        },
+      },
+    });
+
+    expect(next.threads[0]?.turnDiffSummaries.map((summary) => summary.turnId)).toEqual(["turn-1"]);
+    expect(next.threads[0]?.turnDiffSummaries[0]?.assistantMessageId).toBe("msg-1");
+  });
+
   it("infers checkpoint turn counts when deriving turn summaries from an empty baseline", () => {
     const state = makeState(makeThread({ turnDiffSummaries: [] }));
     const next = reducer(state, {

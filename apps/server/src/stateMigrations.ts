@@ -1,15 +1,15 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqliteDatabase } from "./sqliteAdapter";
 
 export const STATE_DB_SCHEMA_VERSION = 1;
 
-export function applyStateDbPragmas(db: DatabaseSync): void {
+export function applyStateDbPragmas(db: SqliteDatabase): void {
   db.exec("PRAGMA journal_mode=WAL;");
   db.exec("PRAGMA synchronous=FULL;");
   db.exec("PRAGMA busy_timeout=5000;");
   db.exec("PRAGMA foreign_keys=ON;");
 }
 
-function readUserVersion(db: DatabaseSync): number {
+function readUserVersion(db: SqliteDatabase): number {
   const row = db.prepare("PRAGMA user_version;").get() as { user_version?: number } | undefined;
   const value = row?.user_version;
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
@@ -18,7 +18,7 @@ function readUserVersion(db: DatabaseSync): number {
   return value;
 }
 
-function migrationV1(db: DatabaseSync): void {
+function migrationV1(db: SqliteDatabase): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS documents (
       id TEXT PRIMARY KEY,
@@ -74,7 +74,7 @@ function migrationV1(db: DatabaseSync): void {
   `);
 }
 
-export function runStateMigrations(db: DatabaseSync): void {
+export function runStateMigrations(db: SqliteDatabase): void {
   applyStateDbPragmas(db);
 
   const userVersion = readUserVersion(db);
