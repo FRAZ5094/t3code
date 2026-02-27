@@ -6,7 +6,8 @@ import {
   type EditorId,
   type KeybindingCommand,
   type MessageId,
-  MODEL_OPTIONS,
+  getDefaultModel,
+  getModelOptions,
   type ProjectId,
   type ProjectEntry,
   type ProjectScript,
@@ -17,9 +18,10 @@ import {
   type ReasoningEffort,
   type ResolvedKeybindingsConfig,
   type ProviderApprovalDecision,
+  type ProviderKind,
   type ThreadId,
   type TurnId,
-  resolveModelSlug,
+  resolveModelSlugForProvider,
 } from "@t3tools/contracts";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -42,6 +44,7 @@ import {
   derivePhase,
   deriveTimelineEntries,
   type PendingApproval,
+  PROVIDER_OPTIONS,
   deriveWorkLogEntries,
   hasToolActivityForTurn,
   isLatestTurnSettled,
@@ -129,12 +132,6 @@ const IMAGE_ONLY_BOOTSTRAP_PROMPT =
 const EMPTY_KEYBINDINGS: ResolvedKeybindingsConfig = [];
 const EMPTY_PROJECT_ENTRIES: ProjectEntry[] = [];
 const COMPOSER_PATH_QUERY_DEBOUNCE_MS = 120;
-const SEARCHABLE_MODEL_OPTIONS = MODEL_OPTIONS.map(({ slug, name }) => ({
-  slug,
-  name,
-  searchSlug: slug.toLowerCase(),
-  searchName: name.toLowerCase(),
-}));
 const SCRIPT_TERMINAL_COLS = 120;
 const SCRIPT_TERMINAL_ROWS = 30;
 
@@ -384,6 +381,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const [isRevertingCheckpoint, setIsRevertingCheckpoint] = useState(false);
   const [selectedEffort, setSelectedEffort] = useState(DEFAULT_REASONING);
   const [envMode, setEnvMode] = useState<"local" | "worktree">("local");
+  const [selectedProviderByThread, setSelectedProviderByThread] = useState<
+    Partial<Record<ThreadId, ProviderKind>>
+  >({});
   const [isSwitchingRuntimeMode, setIsSwitchingRuntimeMode] = useState(false);
   const [respondingRequestIds, setRespondingRequestIds] = useState<ApprovalRequestId[]>([]);
   const [expandedWorkGroups, setExpandedWorkGroups] = useState<Record<string, boolean>>({});
@@ -435,9 +435,33 @@ export default function ChatView({ threadId }: ChatViewProps) {
     dispatch,
   ]);
 
-  const selectedModel = resolveModelSlug(
-    activeThread?.model ?? activeProject?.model ?? DEFAULT_MODEL,
+  const sessionProvider = activeThread?.session?.provider ?? null;
+  const selectedProvider: ProviderKind =
+    (activeThread?.id ? selectedProviderByThread[activeThread.id] : undefined) ??
+    sessionProvider ??
+    "codex";
+  const selectedModel = resolveModelSlugForProvider(
+    selectedProvider,
+    activeThread?.model ?? activeProject?.model ?? getDefaultModel(selectedProvider) ?? DEFAULT_MODEL,
   );
+  const modelOptions = useMemo(() => getModelOptions(selectedProvider), [selectedProvider]);
+  const searchableModelOptions = useMemo(
+    () =>
+      modelOptions.map(({ slug, name }) => ({
+        slug,
+        name,
+        searchSlug: slug.toLowerCase(),
+        searchName: name.toLowerCase(),
+      })),
+    [modelOptions],
+  );
+  useEffect(() => {
+    if (!activeThread?.id || !sessionProvider) return;
+    setSelectedProviderByThread((existing) => {
+      if (existing[activeThread.id]) return existing;
+      return { ...existing, [activeThread.id]: sessionProvider };
+    });
+  }, [activeThread?.id, sessionProvider]);
   const phase = derivePhase(activeThread?.session ?? null);
   const isSendBusy = sendPhase !== "idle";
   const isPreparingWorktree = sendPhase === "preparing-worktree";
@@ -614,7 +638,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       ];
     }
 
-    return SEARCHABLE_MODEL_OPTIONS.filter(({ searchSlug, searchName }) => {
+    return searchableModelOptions.filter(({ searchSlug, searchName }) => {
       const query = composerTrigger.query.trim().toLowerCase();
       if (!query) return true;
       return searchSlug.includes(query) || searchName.includes(query);
@@ -625,7 +649,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       label: name,
       description: slug,
     }));
-  }, [composerTrigger, workspaceEntries]);
+  }, [composerTrigger, searchableModelOptions, workspaceEntries]);
   const composerMenuOpen = Boolean(composerTrigger);
   const activeComposerMenuItem = useMemo(
     () =>
@@ -1588,6 +1612,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           attachments: turnAttachments,
         },
         model: selectedModel || undefined,
+        provider: selectedProvider,
         effort: selectedEffort || undefined,
         assistantDeliveryMode: settings.enableAssistantStreaming ? "streaming" : "buffered",
         approvalPolicy,
@@ -1668,9 +1693,20 @@ export default function ChatView({ threadId }: ChatViewProps) {
           type: "thread.meta.update",
           commandId: newCommandId(),
           threadId: activeThread.id,
-          model: resolveModelSlug(model),
+          model: resolveModelSlugForProvider(selectedProvider, model),
         });
       }
+      scheduleComposerFocus();
+    },
+    [activeThread, scheduleComposerFocus, selectedProvider],
+  );
+  const onProviderSelect = useCallback(
+    (provider: ProviderKind) => {
+      if (!activeThread) return;
+      setSelectedProviderByThread((existing) => ({
+        ...existing,
+        [activeThread.id]: provider,
+      }));
       scheduleComposerFocus();
     },
     [activeThread, scheduleComposerFocus],
@@ -2012,7 +2048,17 @@ export default function ChatView({ threadId }: ChatViewProps) {
             <div className="flex flex-wrap items-center justify-between gap-2 px-2.5 pb-2.5 sm:flex-nowrap sm:gap-0 sm:px-3 sm:pb-3">
               <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:min-w-max sm:overflow-visible">
                 {/* Model picker */}
-                <ModelPicker model={selectedModel} onModelChange={onModelSelect} />
+                <ProviderPicker provider={selectedProvider} onProviderChange={onProviderSelect} />
+
+                {/* Divider */}
+                <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
+
+                {/* Model picker */}
+                <ModelPicker
+                  model={selectedModel}
+                  options={modelOptions}
+                  onModelChange={onModelSelect}
+                />
 
                 {/* Divider */}
                 <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
@@ -2913,11 +2959,12 @@ const MessagesTimeline = memo(function MessagesTimeline({
 
 const ModelPicker = memo(function ModelPicker(props: {
   model: ModelSlug;
+  options: ReadonlyArray<{ readonly slug: ModelSlug; readonly name: string }>;
   onModelChange: (model: ModelSlug) => void;
 }) {
   return (
     <Select
-      items={MODEL_OPTIONS.map((option) => ({ label: option.name, value: option.slug }))}
+      items={props.options.map((option) => ({ label: option.name, value: option.slug }))}
       value={props.model}
       onValueChange={(value) => (value ? props.onModelChange(value) : undefined)}
     >
@@ -2925,9 +2972,38 @@ const ModelPicker = memo(function ModelPicker(props: {
         <SelectValue />
       </SelectTrigger>
       <SelectPopup alignItemWithTrigger={false}>
-        {MODEL_OPTIONS.map(({ slug, name }) => (
+        {props.options.map(({ slug, name }) => (
           <SelectItem key={slug} value={slug}>
             {name}
+          </SelectItem>
+        ))}
+      </SelectPopup>
+    </Select>
+  );
+});
+
+const ProviderPicker = memo(function ProviderPicker(props: {
+  provider: ProviderKind;
+  onProviderChange: (provider: ProviderKind) => void;
+}) {
+  return (
+    <Select
+      items={PROVIDER_OPTIONS.filter((option) => option.available).map((option) => ({
+        label: option.label,
+        value: option.value,
+      }))}
+      value={props.provider}
+      onValueChange={(value) =>
+        value === "codex" || value === "claudeCode" ? props.onProviderChange(value) : undefined
+      }
+    >
+      <SelectTrigger size="sm" variant="ghost">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectPopup alignItemWithTrigger={false}>
+        {PROVIDER_OPTIONS.filter((option) => option.available).map(({ value, label }) => (
+          <SelectItem key={value} value={value}>
+            {label}
           </SelectItem>
         ))}
       </SelectPopup>
