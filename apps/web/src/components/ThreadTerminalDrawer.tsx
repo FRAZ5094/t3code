@@ -25,6 +25,7 @@ import {
   MAX_THREAD_TERMINAL_COUNT,
   type ThreadTerminalGroup,
 } from "../types";
+import { isIgnorableTerminalWriteError } from "../terminal-errors";
 import { readNativeApi } from "~/nativeApi";
 
 const MIN_DRAWER_HEIGHT = 180;
@@ -112,6 +113,7 @@ interface TerminalViewportProps {
   terminalId: string;
   cwd: string;
   runtimeEnv?: Record<string, string>;
+  onCloseTerminal: (terminalId: string) => void;
   focusRequestId: number;
   autoFocus: boolean;
   resizeEpoch: number;
@@ -123,6 +125,7 @@ function TerminalViewport({
   terminalId,
   cwd,
   runtimeEnv,
+  onCloseTerminal,
   focusRequestId,
   autoFocus,
   resizeEpoch,
@@ -156,6 +159,12 @@ function TerminalViewport({
 
     const api = readNativeApi();
     if (!api) return;
+    let closeRequested = false;
+    const requestTerminalClose = () => {
+      if (closeRequested) return;
+      closeRequested = true;
+      onCloseTerminal(terminalId);
+    };
 
     const sendTerminalInput = async (data: string, fallbackError: string) => {
       const activeTerminal = terminalRef.current;
@@ -163,6 +172,10 @@ function TerminalViewport({
       try {
         await api.terminal.write({ threadId, terminalId, data });
       } catch (error) {
+        if (isIgnorableTerminalWriteError(error)) {
+          requestTerminalClose();
+          return;
+        }
         writeSystemMessage(activeTerminal, error instanceof Error ? error.message : fallbackError);
       }
     };
@@ -243,12 +256,13 @@ function TerminalViewport({
     const inputDisposable = terminal.onData((data) => {
       void api.terminal
         .write({ threadId, terminalId, data })
-        .catch((err) =>
-          writeSystemMessage(
-            terminal,
-            err instanceof Error ? err.message : "Terminal write failed",
-          ),
-        );
+        .catch((err) => {
+          if (isIgnorableTerminalWriteError(err)) {
+            requestTerminalClose();
+            return;
+          }
+          writeSystemMessage(terminal, err instanceof Error ? err.message : "Terminal write failed");
+        });
     });
 
     const themeObserver = new MutationObserver(() => {
@@ -325,16 +339,7 @@ function TerminalViewport({
       }
 
       if (event.type === "exited") {
-        const details = [
-          typeof event.exitCode === "number" ? `code ${event.exitCode}` : null,
-          typeof event.exitSignal === "number" ? `signal ${event.exitSignal}` : null,
-        ]
-          .filter((value): value is string => value !== null)
-          .join(", ");
-        writeSystemMessage(
-          activeTerminal,
-          details.length > 0 ? `Process exited (${details})` : "Process exited",
-        );
+        requestTerminalClose();
       }
     });
 
@@ -370,7 +375,7 @@ function TerminalViewport({
       fitAddonRef.current = null;
       terminal.dispose();
     };
-  }, [cwd, runtimeEnv, terminalId, threadId]);
+  }, [cwd, onCloseTerminal, runtimeEnv, terminalId, threadId]);
 
   useEffect(() => {
     if (!autoFocus) return;
@@ -783,6 +788,7 @@ export default function ThreadTerminalDrawer({
                         terminalId={terminalId}
                         cwd={cwd}
                         {...(runtimeEnv ? { runtimeEnv } : {})}
+                        onCloseTerminal={onCloseTerminal}
                         focusRequestId={focusRequestId}
                         autoFocus={terminalId === resolvedActiveTerminalId}
                         resizeEpoch={resizeEpoch}
@@ -800,6 +806,7 @@ export default function ThreadTerminalDrawer({
                   terminalId={resolvedActiveTerminalId}
                   cwd={cwd}
                   {...(runtimeEnv ? { runtimeEnv } : {})}
+                  onCloseTerminal={onCloseTerminal}
                   focusRequestId={focusRequestId}
                   autoFocus
                   resizeEpoch={resizeEpoch}
