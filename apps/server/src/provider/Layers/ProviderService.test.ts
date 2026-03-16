@@ -616,6 +616,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
       });
 
       yield* routing.codex.stopAll();
+      yield* routing.claude.stopAll();
 
       const remaining = yield* provider.listSessions();
       assert.equal(remaining.length, 0);
