@@ -30,6 +30,7 @@ import {
   normalizeModelSlug,
   resolveReasoningEffortForProvider,
   resolveModelSlugForProvider,
+  supportsClaudeFastMode,
 } from "@t3tools/shared/model";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -232,7 +233,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     (store) => store.setInteractionMode,
   );
   const setComposerDraftEffort = useComposerDraftStore((store) => store.setEffort);
-  const setComposerDraftCodexFastMode = useComposerDraftStore((store) => store.setCodexFastMode);
+  const setComposerDraftFastMode = useComposerDraftStore((store) => store.setFastMode);
   const addComposerDraftImage = useComposerDraftStore((store) => store.addImage);
   const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
   const removeComposerDraftImage = useComposerDraftStore((store) => store.removeImage);
@@ -546,8 +547,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
         getDefaultReasoningEffort("claudeAgent"))
       : null;
   const selectedEffort = selectedCodexEffort ?? selectedClaudeEffort;
-  const selectedCodexFastModeEnabled =
-    selectedProvider === "codex" ? composerDraft.codexFastMode : false;
+  const selectedClaudeFastModeAvailable =
+    selectedProvider === "claudeAgent" && supportsClaudeFastMode(selectedModel);
+  const selectedFastModeAvailable = selectedProvider === "codex" || selectedClaudeFastModeAvailable;
+  const selectedFastModeEnabled = selectedFastModeAvailable ? composerDraft.fastMode : false;
   const isClaudeUltrathink = selectedClaudeEffort === "ultrathink";
   const selectedModelOptionsForDispatch = useMemo(() => {
     if (selectedProvider === "codex") {
@@ -555,22 +558,27 @@ export default function ChatView({ threadId }: ChatViewProps) {
         ...(supportsReasoningEffort && selectedCodexEffort
           ? { reasoningEffort: selectedCodexEffort }
           : {}),
-        ...(selectedCodexFastModeEnabled ? { fastMode: true } : {}),
+        ...(selectedFastModeEnabled ? { fastMode: true } : {}),
       };
       return Object.keys(codexOptions).length > 0 ? { codex: codexOptions } : undefined;
     }
-    if (selectedProvider === "claudeAgent" && selectedClaudeEffort) {
+    if (selectedProvider === "claudeAgent") {
+      const claudeOptions = {
+        ...(selectedClaudeEffort ? { effort: selectedClaudeEffort } : {}),
+        ...(selectedFastModeEnabled ? { fastMode: true } : {}),
+      };
+      if (Object.keys(claudeOptions).length === 0) {
+        return undefined;
+      }
       return {
-        claudeAgent: {
-          effort: selectedClaudeEffort,
-        },
+        claudeAgent: claudeOptions,
       };
     }
     return undefined;
   }, [
     selectedClaudeEffort,
     selectedCodexEffort,
-    selectedCodexFastModeEnabled,
+    selectedFastModeEnabled,
     selectedProvider,
     supportsReasoningEffort,
   ]);
@@ -2966,12 +2974,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
     },
     [scheduleComposerFocus, setComposerDraftEffort, threadId],
   );
-  const onCodexFastModeChange = useCallback(
+  const onFastModeChange = useCallback(
     (enabled: boolean) => {
-      setComposerDraftCodexFastMode(threadId, enabled);
+      setComposerDraftFastMode(threadId, enabled);
       scheduleComposerFocus();
     },
-    [scheduleComposerFocus, setComposerDraftCodexFastMode, threadId],
+    [scheduleComposerFocus, setComposerDraftFastMode, threadId],
   );
   const onEnvModeChange = useCallback(
     (mode: DraftThreadEnvMode) => {
@@ -3604,10 +3612,11 @@ export default function ChatView({ threadId }: ChatViewProps) {
                             runtimeMode={runtimeMode}
                             selectedEffort={selectedEffort}
                             selectedProvider={selectedProvider}
-                            selectedCodexFastModeEnabled={selectedCodexFastModeEnabled}
+                            supportsFastMode={selectedFastModeAvailable}
+                            selectedFastModeEnabled={selectedFastModeEnabled}
                             reasoningOptions={reasoningOptions}
                             onEffortSelect={onEffortSelect}
-                            onCodexFastModeChange={onCodexFastModeChange}
+                            onFastModeChange={onFastModeChange}
                             onToggleInteractionMode={toggleInteractionMode}
                             onTogglePlanSidebar={togglePlanSidebar}
                             onToggleRuntimeMode={toggleRuntimeMode}
@@ -3623,12 +3632,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
                                 <ProviderTraitsPicker
                                   provider={selectedProvider}
                                   effort={selectedEffort}
+                                  supportsFastMode={selectedFastModeAvailable}
                                   options={reasoningOptions}
                                   onEffortChange={onEffortSelect}
-                                  {...(selectedProvider === "codex"
+                                  {...(selectedFastModeAvailable
                                     ? {
-                                        fastModeEnabled: selectedCodexFastModeEnabled,
-                                        onFastModeChange: onCodexFastModeChange,
+                                        fastModeEnabled: selectedFastModeEnabled,
+                                        onFastModeChange,
                                       }
                                     : {})}
                                 />

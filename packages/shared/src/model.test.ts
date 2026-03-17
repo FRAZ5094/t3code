@@ -20,6 +20,7 @@ import {
   resolveReasoningEffortForProvider,
   resolveModelSlug,
   resolveModelSlugForProvider,
+  supportsClaudeFastMode,
 } from "./model";
 
 describe("normalizeModelSlug", () => {
@@ -164,5 +165,15 @@ describe("getEffectiveClaudeCodeEffort", () => {
   it("returns null when no claude effort is selected", () => {
     expect(getEffectiveClaudeCodeEffort(null)).toBeNull();
     expect(getEffectiveClaudeCodeEffort(undefined)).toBeNull();
+  });
+});
+
+describe("supportsClaudeFastMode", () => {
+  it("only enables Claude fast mode for Opus 4.6", () => {
+    expect(supportsClaudeFastMode("claude-opus-4-6")).toBe(true);
+    expect(supportsClaudeFastMode("opus")).toBe(true);
+    expect(supportsClaudeFastMode("claude-sonnet-4-6")).toBe(false);
+    expect(supportsClaudeFastMode("claude-haiku-4-5")).toBe(false);
+    expect(supportsClaudeFastMode(undefined)).toBe(false);
   });
 });

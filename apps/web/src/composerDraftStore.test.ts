@@ -337,7 +337,7 @@ describe("composerDraftStore project draft thread mapping", () => {
   });
 });
 
-describe("composerDraftStore codex fast mode", () => {
+describe("composerDraftStore fast mode", () => {
   const threadId = ThreadId.makeUnsafe("thread-service-tier");
 
   beforeEach(() => {
@@ -348,17 +348,17 @@ describe("composerDraftStore codex fast mode", () => {
     });
   });
 
-  it("stores codex fast mode in the draft", () => {
+  it("stores fast mode in the draft", () => {
     const store = useComposerDraftStore.getState();
-    store.setCodexFastMode(threadId, true);
+    store.setFastMode(threadId, true);
 
-    expect(useComposerDraftStore.getState().draftsByThreadId[threadId]?.codexFastMode).toBe(true);
+    expect(useComposerDraftStore.getState().draftsByThreadId[threadId]?.fastMode).toBe(true);
   });
 
-  it("clears codex fast mode when reset to the default", () => {
+  it("clears fast mode when reset to the default", () => {
     const store = useComposerDraftStore.getState();
-    store.setCodexFastMode(threadId, true);
-    store.setCodexFastMode(threadId, false);
+    store.setFastMode(threadId, true);
+    store.setFastMode(threadId, false);
 
     expect(useComposerDraftStore.getState().draftsByThreadId[threadId]).toBeUndefined();
   });

@@ -37,6 +37,7 @@ function effortLabel(provider: ProviderKind, effort: ProviderReasoningEffort): s
 export const ProviderTraitsPicker = memo(function ProviderTraitsPicker(props: {
   provider: ProviderKind;
   effort: ProviderReasoningEffort;
+  supportsFastMode?: boolean;
   fastModeEnabled?: boolean;
   options: ReadonlyArray<ProviderReasoningEffort>;
   onEffortChange: (effort: ProviderReasoningEffort) => void;
@@ -46,7 +47,7 @@ export const ProviderTraitsPicker = memo(function ProviderTraitsPicker(props: {
   const defaultReasoningEffort = getDefaultReasoningEffort(props.provider);
   const triggerLabel = [
     effortLabel(props.provider, props.effort),
-    ...(props.provider === "codex" && props.fastModeEnabled ? ["Fast"] : []),
+    ...(props.supportsFastMode && props.fastModeEnabled ? ["Fast"] : []),
   ]
     .filter(Boolean)
     .join(" · ");
@@ -92,7 +93,7 @@ export const ProviderTraitsPicker = memo(function ProviderTraitsPicker(props: {
             ))}
           </MenuRadioGroup>
         </MenuGroup>
-        {props.provider === "codex" && props.onFastModeChange ? (
+        {props.supportsFastMode && props.onFastModeChange ? (
           <>
             <MenuDivider />
             <MenuGroup>

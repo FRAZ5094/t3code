@@ -26,10 +26,11 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   runtimeMode: RuntimeMode;
   selectedEffort: ProviderReasoningEffort | null;
   selectedProvider: ProviderKind;
-  selectedCodexFastModeEnabled: boolean;
+  supportsFastMode: boolean;
+  selectedFastModeEnabled: boolean;
   reasoningOptions: ReadonlyArray<ProviderReasoningEffort>;
   onEffortSelect: (effort: ProviderReasoningEffort) => void;
-  onCodexFastModeChange: (enabled: boolean) => void;
+  onFastModeChange: (enabled: boolean) => void;
   onToggleInteractionMode: () => void;
   onTogglePlanSidebar: () => void;
   onToggleRuntimeMode: () => void;
@@ -82,7 +83,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
                 ))}
               </MenuRadioGroup>
             </MenuGroup>
-            {props.selectedProvider === "codex" ? (
+            {props.supportsFastMode ? (
               <>
                 <MenuDivider />
                 <MenuGroup>
@@ -90,9 +91,9 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
                     Fast Mode
                   </div>
                   <MenuRadioGroup
-                    value={props.selectedCodexFastModeEnabled ? "on" : "off"}
+                    value={props.selectedFastModeEnabled ? "on" : "off"}
                     onValueChange={(value) => {
-                      props.onCodexFastModeChange(value === "on");
+                      props.onFastModeChange(value === "on");
                     }}
                   >
                     <MenuRadioItem value="off">off</MenuRadioItem>

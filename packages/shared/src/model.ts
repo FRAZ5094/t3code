@@ -26,6 +26,10 @@ export function getDefaultModel(provider: ProviderKind = "codex"): ModelSlug {
   return DEFAULT_MODEL_BY_PROVIDER[provider];
 }
 
+export function supportsClaudeFastMode(model: string | null | undefined): boolean {
+  return normalizeModelSlug(model, "claudeAgent") === "claude-opus-4-6";
+}
+
 export function normalizeModelSlug(
   model: string | null | undefined,
   provider: ProviderKind = "codex",

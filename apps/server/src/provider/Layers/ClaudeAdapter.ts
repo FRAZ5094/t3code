@@ -37,7 +37,11 @@ import {
   TurnId,
   type UserInputQuestion,
 } from "@t3tools/contracts";
-import { applyClaudePromptEffortPrefix, getEffectiveClaudeCodeEffort } from "@t3tools/shared/model";
+import {
+  applyClaudePromptEffortPrefix,
+  getEffectiveClaudeCodeEffort,
+  supportsClaudeFastMode,
+} from "@t3tools/shared/model";
 import { Cause, DateTime, Deferred, Effect, Layer, Queue, Random, Ref, Stream } from "effect";
 
 import {
@@ -2194,6 +2198,8 @@ function makeClaudeAdapter(options?: ClaudeAdapterLiveOptions) {
 
         const providerOptions = input.providerOptions?.claudeAgent;
         const effort = input.modelOptions?.claudeAgent?.effort;
+        const fastMode =
+          input.modelOptions?.claudeAgent?.fastMode === true && supportsClaudeFastMode(input.model);
         const effectiveEffort = getEffectiveClaudeCodeEffort(effort);
         const permissionMode =
           toPermissionMode(providerOptions?.permissionMode) ??
@@ -2213,6 +2219,7 @@ function makeClaudeAdapter(options?: ClaudeAdapterLiveOptions) {
           ...(providerOptions?.maxThinkingTokens !== undefined
             ? { maxThinkingTokens: providerOptions.maxThinkingTokens }
             : {}),
+          ...(fastMode ? { settings: { fastMode: true } } : {}),
           ...(resumeState?.resume ? { resume: resumeState.resume } : {}),
           ...(resumeState?.resumeSessionAt ? { resumeSessionAt: resumeState.resumeSessionAt } : {}),
           includePartialMessages: true,
@@ -2302,6 +2309,7 @@ function makeClaudeAdapter(options?: ClaudeAdapterLiveOptions) {
               ...(providerOptions?.maxThinkingTokens !== undefined
                 ? { maxThinkingTokens: providerOptions.maxThinkingTokens }
                 : {}),
+              ...(fastMode ? { fastMode: true } : {}),
             },
           },
           providerRefs: {},

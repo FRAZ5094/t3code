@@ -83,9 +83,13 @@ describe("ProviderCommandReactor", () => {
     createdStateDirs.clear();
   });
 
-  async function createHarness(input?: { readonly stateDir?: string }) {
+  async function createHarness(input?: {
+    readonly stateDir?: string;
+    readonly threadModel?: string;
+  }) {
     const now = new Date().toISOString();
     const stateDir = input?.stateDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "t3code-reactor-"));
+    const threadModel = input?.threadModel ?? "gpt-5-codex";
     createdStateDirs.add(stateDir);
     const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
     let nextSessionIndex = 1;
@@ -228,7 +232,7 @@ describe("ProviderCommandReactor", () => {
         projectId: asProjectId("project-1"),
         title: "Provider Project",
         workspaceRoot: "/tmp/provider-project",
-        defaultModel: "gpt-5-codex",
+        defaultModel: threadModel,
         createdAt: now,
       }),
     );
@@ -239,7 +243,7 @@ describe("ProviderCommandReactor", () => {
         threadId: ThreadId.makeUnsafe("thread-1"),
         projectId: asProjectId("project-1"),
         title: "Thread",
-        model: "gpt-5-codex",
+        model: threadModel,
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
         branch: null,
@@ -352,7 +356,7 @@ describe("ProviderCommandReactor", () => {
   });
 
   it("forwards claude effort options through session start and turn send", async () => {
-    const harness = await createHarness();
+    const harness = await createHarness({ threadModel: "claude-sonnet-4-6" });
     const now = new Date().toISOString();
 
     await Effect.runPromise(
@@ -396,6 +400,56 @@ describe("ProviderCommandReactor", () => {
       modelOptions: {
         claudeAgent: {
           effort: "max",
+        },
+      },
+    });
+  });
+
+  it("forwards claude fast mode options through session start and turn send", async () => {
+    const harness = await createHarness({ threadModel: "claude-opus-4-6" });
+    const now = new Date().toISOString();
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.makeUnsafe("cmd-turn-start-claude-fast-mode"),
+        threadId: ThreadId.makeUnsafe("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-claude-fast-mode"),
+          role: "user",
+          text: "hello with fast mode",
+          attachments: [],
+        },
+        provider: "claudeAgent",
+        model: "claude-opus-4-6",
+        modelOptions: {
+          claudeAgent: {
+            fastMode: true,
+          },
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+      provider: "claudeAgent",
+      model: "claude-opus-4-6",
+      modelOptions: {
+        claudeAgent: {
+          fastMode: true,
+        },
+      },
+    });
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      threadId: ThreadId.makeUnsafe("thread-1"),
+      model: "claude-opus-4-6",
+      modelOptions: {
+        claudeAgent: {
+          fastMode: true,
         },
       },
     });
@@ -582,7 +636,7 @@ describe("ProviderCommandReactor", () => {
   });
 
   it("restarts claude sessions when claude effort changes", async () => {
-    const harness = await createHarness();
+    const harness = await createHarness({ threadModel: "claude-sonnet-4-6" });
     const now = new Date().toISOString();
 
     await Effect.runPromise(
