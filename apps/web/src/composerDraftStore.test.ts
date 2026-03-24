@@ -828,9 +828,18 @@ describe("composerDraftStore provider-scoped option updates", () => {
 
   it("does not patch provider options when the draft selection is on another provider", () => {
     const store = useComposerDraftStore.getState();
-    store.setModelSelection(threadId, modelSelection("codex", "gpt-5.4"));
+    store.setModelSelection(
+      threadId,
+      modelSelection("codex", "gpt-5.3-codex", {
+        reasoningEffort: "medium",
+      }),
+    );
     store.setProviderModelOptions(threadId, "claudeAgent", { effort: "max" });
-    expect(useComposerDraftStore.getState().draftsByThreadId[threadId]).toBeUndefined();
+    expect(useComposerDraftStore.getState().draftsByThreadId[threadId]?.modelSelection).toEqual(
+      modelSelection("codex", "gpt-5.3-codex", {
+        reasoningEffort: "medium",
+      }),
+    );
   });
 });
 

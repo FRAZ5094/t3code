@@ -726,7 +726,7 @@ function migratePersistedComposerDraftStoreState(
   const rawDraftThreadsByThreadId = candidate.draftThreadsByThreadId;
   const rawProjectDraftThreadIdByProjectId = candidate.projectDraftThreadIdByProjectId;
   const stickyModelSelection = normalizeModelSelection(candidate.stickyModelSelection, {
-    provider: candidate.stickyProvider,
+    provider: candidate.stickyProvider ?? "codex",
     model: candidate.stickyModel,
     modelOptions: candidate.stickyModelOptions,
   });

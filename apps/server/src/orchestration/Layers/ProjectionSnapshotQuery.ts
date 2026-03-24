@@ -168,9 +168,9 @@ const decodeModelSelection = (input: {
           : {}),
       }),
     catch: (error) =>
-      toPersistenceDecodeError("ProjectionSnapshotQuery.decodeModelSelection")(
-        error as Schema.SchemaError,
-      ),
+      Schema.isSchemaError(error)
+        ? toPersistenceDecodeError("ProjectionSnapshotQuery.decodeModelSelection")(error)
+        : toPersistenceSqlError("ProjectionSnapshotQuery.decodeModelSelection")(error),
   });
 
 const makeProjectionSnapshotQuery = Effect.gen(function* () {
