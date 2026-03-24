@@ -16,7 +16,7 @@ export function ContextWindowMeter(props: { usage: ContextWindowSnapshot }) {
   const { usage } = props;
   const usedPercentage = formatPercentage(usage.usedPercentage);
   const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0));
-  const radius = 10;
+  const radius = 9.75;
   const circumference = 2 * Math.PI * radius;
   const dashOffset = circumference - (normalizedPercentage / 100) * circumference;
 
@@ -45,7 +45,7 @@ export function ContextWindowMeter(props: { usage: ContextWindowSnapshot }) {
                   r={radius}
                   fill="none"
                   stroke="color-mix(in oklab, var(--color-muted) 70%, transparent)"
-                  strokeWidth="2"
+                  strokeWidth="3"
                 />
                 <circle
                   cx="12"
@@ -53,7 +53,7 @@ export function ContextWindowMeter(props: { usage: ContextWindowSnapshot }) {
                   r={radius}
                   fill="none"
                   stroke="var(--color-muted-foreground)"
-                  strokeWidth="2"
+                  strokeWidth="3"
                   strokeLinecap="round"
                   strokeDasharray={circumference}
                   strokeDashoffset={dashOffset}
@@ -62,7 +62,7 @@ export function ContextWindowMeter(props: { usage: ContextWindowSnapshot }) {
               </svg>
               <span
                 className={cn(
-                  "relative flex h-[20px] w-[20px] items-center justify-center rounded-full bg-background text-[8px] font-medium",
+                  "relative flex h-[15px] w-[15px] items-center justify-center rounded-full bg-background text-[8px] font-medium",
                   "text-muted-foreground",
                 )}
               >
