@@ -78,6 +78,10 @@ export type ServerSettings = typeof ServerSettings.Type;
 
 export const DEFAULT_SERVER_SETTINGS: ServerSettings = Schema.decodeSync(ServerSettings)({});
 
+// ── Unified type ─────────────────────────────────────────────────────
+
+export type UnifiedSettings = ServerSettings & ClientSettings;
+
 // ── Server Settings Patch (replace with a Schema.deepPartial if available) ──────────────────────────────────────────
 
 const CodexModelOptionsPatch = Schema.Struct({

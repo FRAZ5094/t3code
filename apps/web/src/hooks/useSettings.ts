@@ -27,6 +27,7 @@ import {
   SidebarProjectSortOrder,
   SidebarThreadSortOrder,
   TimestampFormat,
+  UnifiedSettings,
 } from "@t3tools/contracts/settings";
 import { serverConfigQueryOptions, serverQueryKeys } from "~/lib/serverReactQuery";
 import { ensureNativeApi } from "~/nativeApi";
@@ -35,10 +36,6 @@ import { normalizeCustomModelSlugs } from "~/modelSelection";
 import { Predicate, Schema, Struct } from "effect";
 import { DeepMutable } from "effect/Types";
 import { deepMerge } from "@t3tools/shared/Struct";
-
-// ── Unified type ─────────────────────────────────────────────────────
-
-export type UnifiedSettings = ServerSettings & ClientSettings;
 
 // ── Key sets for routing patches ─────────────────────────────────────
 
