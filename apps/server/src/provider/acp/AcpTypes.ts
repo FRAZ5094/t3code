@@ -94,7 +94,7 @@ const jsonRpcWireToInbound = SchemaTransformation.transformOrFail({
 
     return Effect.fail(
       new SchemaIssue.InvalidValue(Option.some(parsed), {
-        title: "Unrecognized JSON-RPC inbound message shape",
+        message: "Unrecognized JSON-RPC inbound message shape",
       }),
     );
   },

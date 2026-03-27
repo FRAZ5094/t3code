@@ -72,12 +72,11 @@ function getProviderStateFromCapabilities(
   const promptEffort = resolveEffort(caps, rawEffort) ?? null;
 
   // Normalize options for dispatch
-  const normalizedOptions =
-    provider === "codex"
-      ? normalizeCodexModelOptionsWithCapabilities(caps, providerOptions)
-      : provider === "cursor"
-        ? normalizeCursorModelOptionsWithCapabilities(caps, providerOptions)
-        : normalizeClaudeModelOptionsWithCapabilities(caps, providerOptions);
+  const normalizedOptions = {
+    codex: normalizeCodexModelOptionsWithCapabilities(caps, providerOptions),
+    cursor: normalizeCursorModelOptionsWithCapabilities(caps, providerOptions),
+    claudeAgent: normalizeClaudeModelOptionsWithCapabilities(caps, providerOptions),
+  }[provider];
 
   // Ultrathink styling (driven by capabilities data, not provider identity)
   const ultrathinkActive =

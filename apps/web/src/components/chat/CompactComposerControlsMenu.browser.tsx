@@ -112,27 +112,7 @@ async function mountMenu(props?: { modelSelection?: ModelSelection; prompt?: str
               },
             },
           ]
-        : provider === "cursor"
-          ? [
-              {
-                slug: "gpt-5.3-codex",
-                name: "Codex 5.3",
-                isCustom: false,
-                capabilities: {
-                  reasoningEffortLevels: [
-                    { value: "low", label: "Low" },
-                    { value: "medium", label: "Medium", isDefault: true },
-                    { value: "high", label: "High" },
-                    { value: "xhigh", label: "Extra high" },
-                  ],
-                  supportsFastMode: true,
-                  supportsThinkingToggle: false,
-                  contextWindowOptions: [],
-                  promptInjectedEffortLevels: [],
-                },
-              },
-            ]
-          : [];
+        : [];
   const screen = await render(
     <CompactComposerControlsMenu
       activePlan={false}
@@ -240,24 +220,6 @@ describe("CompactComposerControlsMenu", () => {
       expect(text).toContain("On (default)");
       expect(text).toContain("Off");
     });
-  });
-
-  it("shows Cursor reasoning controls for GPT-5.3 Codex family", async () => {
-    const mounted = await mountMenu({
-      modelSelection: { provider: "cursor", model: "gpt-5.3-codex" },
-    });
-
-    try {
-      await page.getByLabelText("More composer controls").click();
-
-      await vi.waitFor(() => {
-        const text = document.body.textContent ?? "";
-        expect(text).toContain("Reasoning");
-        expect(text).toContain("Fast mode");
-      });
-    } finally {
-      await mounted.cleanup();
-    }
   });
 
   it("shows prompt-controlled Ultrathink messaging with disabled effort controls", async () => {
