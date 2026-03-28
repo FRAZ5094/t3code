@@ -112,6 +112,44 @@ it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
       }),
   );
 
+  it.effect("logs outgoing notifications when logOutgoing is enabled", () =>
+    Effect.gen(function* () {
+      const { stdio } = yield* makeInMemoryStdio();
+      const events: Array<AcpProtocol.AcpProtocolLogEvent> = [];
+      const transport = yield* AcpProtocol.makeAcpPatchedProtocol({
+        stdio,
+        serverRequestMethods: new Set(),
+        logOutgoing: true,
+        logger: (event) =>
+          Effect.sync(() => {
+            events.push(event);
+          }),
+      });
+
+      yield* transport.notifications.sendSessionCancel({ sessionId: "session-1" });
+
+      assert.deepEqual(events, [
+        {
+          direction: "outgoing",
+          stage: "decoded",
+          payload: {
+            jsonrpc: "2.0",
+            method: "session/cancel",
+            params: {
+              sessionId: "session-1",
+            },
+          },
+        },
+        {
+          direction: "outgoing",
+          stage: "raw",
+          payload:
+            '{"jsonrpc":"2.0","method":"session/cancel","params":{"sessionId":"session-1"}}\n',
+        },
+      ]);
+    }),
+  );
+
   it.effect("supports generic extension requests over the patched transport", () =>
     Effect.gen(function* () {
       const { stdio, input, output } = yield* makeInMemoryStdio();

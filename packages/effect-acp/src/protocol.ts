@@ -445,43 +445,53 @@ export const makeAcpPatchedProtocol = (
       supportsSpanPropagation: true,
     });
 
-    const sendNotification = (method: string, payload: unknown) =>
-      Queue.offer(
-        outgoing,
-        `${JSON.stringify({
-          jsonrpc: "2.0",
-          method,
-          ...(payload !== undefined ? { params: payload } : {}),
-        })}\n`,
-      ).pipe(Effect.asVoid);
-
-    const sendRequest = (method: string, payload: unknown) =>
-      Effect.gen(function* () {
-        const requestId = yield* Ref.modify(
-          nextRequestId,
-          (current) => [current, current + 1n] as const,
-        );
-        const deferred = yield* Deferred.make<unknown, AcpError.AcpError>();
-        yield* Ref.update(extPending, (pending) =>
-          new Map(pending).set(String(requestId), deferred),
-        );
-        yield* offerOutgoing({
-          _tag: "Request",
-          id: String(requestId),
-          tag: method,
-          payload,
-          headers: [],
-        }).pipe(
-          Effect.catch((error) =>
-            Ref.update(extPending, (pending) => {
-              const next = new Map(pending);
-              next.delete(String(requestId));
-              return next;
-            }).pipe(Effect.andThen(Effect.fail(error))),
-          ),
-        );
-        return yield* Deferred.await(deferred);
+    const sendNotification = Effect.fn("sendNotification")(function* (
+      method: string,
+      payload: unknown,
+    ) {
+      const message = {
+        jsonrpc: "2.0" as const,
+        method,
+        ...(payload !== undefined ? { params: payload } : {}),
+      };
+      yield* logProtocol({
+        direction: "outgoing",
+        stage: "decoded",
+        payload: message,
       });
+      const encoded = `${JSON.stringify(message)}\n`;
+      yield* logProtocol({
+        direction: "outgoing",
+        stage: "raw",
+        payload: encoded,
+      });
+      yield* Queue.offer(outgoing, encoded).pipe(Effect.asVoid);
+    });
+
+    const sendRequest = Effect.fn("sendRequest")(function* (method: string, payload: unknown) {
+      const requestId = yield* Ref.modify(
+        nextRequestId,
+        (current) => [current, current + 1n] as const,
+      );
+      const deferred = yield* Deferred.make<unknown, AcpError.AcpError>();
+      yield* Ref.update(extPending, (pending) => new Map(pending).set(String(requestId), deferred));
+      yield* offerOutgoing({
+        _tag: "Request",
+        id: String(requestId),
+        tag: method,
+        payload,
+        headers: [],
+      }).pipe(
+        Effect.catch((error) =>
+          Ref.update(extPending, (pending) => {
+            const next = new Map(pending);
+            next.delete(String(requestId));
+            return next;
+          }).pipe(Effect.andThen(Effect.fail(error))),
+        ),
+      );
+      return yield* Deferred.await(deferred);
+    });
 
     return {
       clientProtocol,
