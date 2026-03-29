@@ -127,6 +127,10 @@ function getSelectedTraits(
     caps.promptInjectedEffortLevels.length > 0 &&
     isClaudeUltrathinkPrompt(prompt);
 
+  // Check if "ultrathink" appears in the body text (not just our prefix)
+  const ultrathinkInBodyText =
+    ultrathinkPromptControlled && isClaudeUltrathinkPrompt(prompt.replace(/^Ultrathink:\s*/i, ""));
+
   return {
     caps,
     effort,
@@ -137,6 +141,7 @@ function getSelectedTraits(
     contextWindow,
     defaultContextWindow,
     ultrathinkPromptControlled,
+    ultrathinkInBodyText,
   };
 }
 
@@ -239,11 +244,18 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
     modelOptions,
     allowPromptInjectedEffort,
   });
+  const { ultrathinkInBodyText } = getSelectedTraits(
+    provider,
+    models,
+    model,
+    prompt,
+    modelOptions,
+    allowPromptInjectedEffort,
+  );
   const defaultEffort = getDefaultEffort(caps);
 
   const handleEffortChange = useCallback(
     (value: string) => {
-      if (ultrathinkPromptControlled) return;
       if (!value) return;
       const nextOption = effortLevels.find((option) => option.value === value);
       if (!nextOption) return;
@@ -255,6 +267,11 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
         onPromptChange(nextPrompt);
         return;
       }
+      if (ultrathinkInBodyText) return;
+      if (ultrathinkPromptControlled) {
+        const stripped = prompt.replace(/^Ultrathink:\s*/i, "");
+        onPromptChange(stripped);
+      }
       const effortKey = getEffortKey(provider);
       updateModelOptions(
         buildNextOptions(provider, modelOptions, { [effortKey]: nextOption.value }),
@@ -262,6 +279,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
     },
     [
       ultrathinkPromptControlled,
+      ultrathinkInBodyText,
       modelOptions,
       onPromptChange,
       updateModelOptions,
@@ -282,17 +300,20 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
         <>
           <MenuGroup>
             <div className="px-2 pt-1.5 pb-1 font-medium text-muted-foreground text-xs">Effort</div>
-            {ultrathinkPromptControlled ? (
+            {ultrathinkInBodyText ? (
               <div className="px-2 pb-1.5 text-muted-foreground/80 text-xs">
-                Remove Ultrathink from the prompt to change effort.
+                Your prompt contains &quot;ultrathink&quot; in the text. Remove it to change effort.
               </div>
             ) : null}
-            <MenuRadioGroup value={effort} onValueChange={handleEffortChange}>
+            <MenuRadioGroup
+              value={ultrathinkPromptControlled ? "ultrathink" : effort}
+              onValueChange={handleEffortChange}
+            >
               {effortLevels.map((option) => (
                 <MenuRadioItem
                   key={option.value}
                   value={option.value}
-                  disabled={ultrathinkPromptControlled}
+                  disabled={ultrathinkInBodyText}
                 >
                   {option.label}
                   {option.value === defaultEffort ? " (default)" : ""}

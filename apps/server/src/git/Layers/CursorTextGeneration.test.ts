@@ -222,4 +222,32 @@ it.layer(CursorTextGenerationTestLayer)("CursorTextGenerationLive", (it) => {
       }),
     ),
   );
+
+  it.effect("generates thread titles through the Cursor provider", () =>
+    withFakeAgentEnv(
+      {
+        result: JSON.stringify({
+          title: '"Trim reconnect spinner status after resume."',
+        }),
+        requireModel: "composer-2",
+        requireTrust: true,
+        requireMode: "ask",
+        stdinMustContain: "You write concise thread titles for coding conversations.",
+      },
+      Effect.gen(function* () {
+        const textGeneration = yield* TextGeneration;
+
+        const generated = yield* textGeneration.generateThreadTitle({
+          cwd: process.cwd(),
+          message: "Fix the reconnect spinner after a resumed session.",
+          modelSelection: {
+            provider: "cursor",
+            model: "composer-2",
+          },
+        });
+
+        expect(generated.title).toBe("Trim reconnect spinner status after resume.");
+      }),
+    ),
+  );
 });

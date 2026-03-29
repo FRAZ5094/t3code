@@ -5,13 +5,23 @@ import { CursorModelSelection } from "@t3tools/contracts";
 import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
 
 import { TextGenerationError } from "../Errors.ts";
-import { type TextGenerationShape, TextGeneration } from "../Services/TextGeneration.ts";
+import {
+  type ThreadTitleGenerationResult,
+  type TextGenerationShape,
+  TextGeneration,
+} from "../Services/TextGeneration.ts";
 import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildThreadTitlePrompt,
 } from "../Prompts.ts";
-import { normalizeCliError, sanitizeCommitSubject, sanitizePrTitle } from "../Utils.ts";
+import {
+  normalizeCliError,
+  sanitizeCommitSubject,
+  sanitizePrTitle,
+  sanitizeThreadTitle,
+} from "../Utils.ts";
 import { resolveCursorAgentModel } from "../../provider/Layers/CursorProvider.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 
@@ -98,7 +108,11 @@ const makeCursorTextGeneration = Effect.gen(function* () {
     outputSchemaJson,
     modelSelection,
   }: {
-    operation: "generateCommitMessage" | "generatePrContent" | "generateBranchName";
+    operation:
+      | "generateCommitMessage"
+      | "generatePrContent"
+      | "generateBranchName"
+      | "generateThreadTitle";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -340,10 +354,39 @@ const makeCursorTextGeneration = Effect.gen(function* () {
     };
   });
 
+  const generateThreadTitle: TextGenerationShape["generateThreadTitle"] = Effect.fn(
+    "CursorTextGeneration.generateThreadTitle",
+  )(function* (input) {
+    const { prompt, outputSchema } = buildThreadTitlePrompt({
+      message: input.message,
+      attachments: input.attachments,
+    });
+
+    if (input.modelSelection.provider !== "cursor") {
+      return yield* new TextGenerationError({
+        operation: "generateThreadTitle",
+        detail: "Invalid model selection.",
+      });
+    }
+
+    const generated = yield* runCursorJson({
+      operation: "generateThreadTitle",
+      cwd: input.cwd,
+      prompt,
+      outputSchemaJson: outputSchema,
+      modelSelection: input.modelSelection,
+    });
+
+    return {
+      title: sanitizeThreadTitle(generated.title),
+    } satisfies ThreadTitleGenerationResult;
+  });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
+    generateThreadTitle,
   } satisfies TextGenerationShape;
 });
 
