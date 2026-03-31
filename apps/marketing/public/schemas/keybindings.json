@@ -56,7 +56,10 @@
         "description": "Optional expression limiting when the shortcut is active."
       }
     },
-    "required": ["key", "command"],
+    "required": [
+      "key",
+      "command"
+    ],
     "additionalProperties": false,
     "description": "Single keybinding rule entry in `keybindings.json`."
   },
