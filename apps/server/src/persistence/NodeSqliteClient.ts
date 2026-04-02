@@ -23,6 +23,8 @@ import type { Connection } from "effect/unstable/sql/SqlConnection";
 import { SqlError, classifySqliteError } from "effect/unstable/sql/SqlError";
 import * as Statement from "effect/unstable/sql/Statement";
 
+import { dbQueriesTotal, dbQueryDuration, withMetrics } from "../observability/Metrics.ts";
+
 const ATTR_DB_SYSTEM_NAME = "db.system.name";
 
 export const TypeId: TypeId = "~local/sqlite-node/SqliteClient";
@@ -82,6 +84,9 @@ const makeWithDatabase = Effect.fn("makeWithDatabase")(function* (
   const transformRows = options.transformResultNames
     ? Statement.defaultTransforms(options.transformResultNames).array
     : undefined;
+  const databaseMetricAttributes = {
+    database: options.filename === ":memory:" ? "memory" : "disk",
+  } as const;
 
   const makeConnection = Effect.gen(function* () {
     const scope = yield* Effect.scope;
@@ -137,7 +142,13 @@ const makeWithDatabase = Effect.fn("makeWithDatabase")(function* (
             }),
           );
         }
-      });
+      }).pipe(
+        withMetrics({
+          counter: dbQueriesTotal,
+          timer: dbQueryDuration,
+          attributes: databaseMetricAttributes,
+        }),
+      );
 
     const run = (sql: string, params: ReadonlyArray<unknown>, raw = false) =>
       Effect.flatMap(Cache.get(prepareCache, sql), (s) => runStatement(s, params, raw));
@@ -172,6 +183,12 @@ const makeWithDatabase = Effect.fn("makeWithDatabase")(function* (
               statement.setReturnArrays(false);
             }
           }),
+      ).pipe(
+        withMetrics({
+          counter: dbQueriesTotal,
+          timer: dbQueryDuration,
+          attributes: databaseMetricAttributes,
+        }),
       );
 
     return identity<Connection>({

@@ -8,6 +8,11 @@ import { OrchestrationCommand } from "@t3tools/contracts";
 import { Deferred, Effect, Layer, Option, PubSub, Queue, Schema, Stream } from "effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
+import {
+  orchestrationCommandsTotal,
+  orchestrationCommandDuration,
+  withMetrics,
+} from "../../observability/Metrics.ts";
 import { toPersistenceSqlError } from "../../persistence/Errors.ts";
 import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
 import { OrchestrationCommandReceiptRepository } from "../../persistence/Services/OrchestrationCommandReceipts.ts";
@@ -62,6 +67,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
 
   const processEnvelope = (envelope: CommandEnvelope): Effect.Effect<void> => {
     const dispatchStartSequence = readModel.snapshotSequence;
+    const aggregateRef = commandToAggregateRef(envelope.command);
     const reconcileReadModelAfterDispatchFailure = Effect.gen(function* () {
       const persistedEvents = yield* Stream.runCollect(
         eventStore.readFromSequence(dispatchStartSequence),
@@ -82,6 +88,13 @@ const makeOrchestrationEngine = Effect.gen(function* () {
     });
 
     return Effect.gen(function* () {
+      yield* Effect.annotateCurrentSpan({
+        "orchestration.command_id": envelope.command.commandId,
+        "orchestration.command_type": envelope.command.type,
+        "orchestration.aggregate_kind": aggregateRef.aggregateKind,
+        "orchestration.aggregate_id": aggregateRef.aggregateId,
+      });
+
       const existingReceipt = yield* commandReceiptRepository.getByCommandId({
         commandId: envelope.command.commandId,
       });
@@ -175,7 +188,6 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           );
 
           if (Schema.is(OrchestrationCommandInvariantError)(error)) {
-            const aggregateRef = commandToAggregateRef(envelope.command);
             yield* commandReceiptRepository
               .upsert({
                 commandId: envelope.command.commandId,
@@ -191,6 +203,16 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           yield* Deferred.fail(envelope.result, error);
         }),
       ),
+      Effect.withSpan(`orchestration.command.${envelope.command.type}`),
+      Effect.asVoid,
+      withMetrics({
+        counter: orchestrationCommandsTotal,
+        timer: orchestrationCommandDuration,
+        attributes: {
+          commandType: envelope.command.type,
+          aggregateKind: aggregateRef.aggregateKind,
+        },
+      }),
     );
   };
 

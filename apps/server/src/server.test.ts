@@ -139,8 +139,17 @@ const buildAppUnderTest = (options?: {
     const baseDir = options?.config?.baseDir ?? tempBaseDir;
     const devUrl = options?.config?.devUrl;
     const derivedPaths = yield* deriveServerPaths(baseDir, devUrl);
-    const config = {
+    const config: ServerConfigShape = {
       logLevel: "Info",
+      traceMinLevel: "Info",
+      traceTimingEnabled: true,
+      traceBatchWindowMs: 200,
+      traceMaxBytes: 10 * 1024 * 1024,
+      traceMaxFiles: 10,
+      otlpTracesUrl: undefined,
+      otlpMetricsUrl: undefined,
+      otlpExportIntervalMs: 10_000,
+      otlpServiceName: "t3-server",
       mode: "web",
       port: 0,
       host: "127.0.0.1",
@@ -154,7 +163,7 @@ const buildAppUnderTest = (options?: {
       autoBootstrapProjectFromCwd: false,
       logWebSocketEvents: false,
       ...options?.config,
-    } satisfies ServerConfigShape;
+    };
     const layerConfig = Layer.succeed(ServerConfig, config);
 
     const appLayer = HttpRouter.serve(makeRoutesLayer, {

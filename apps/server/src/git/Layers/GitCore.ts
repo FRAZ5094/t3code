@@ -19,6 +19,8 @@ import {
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { GitCommandError } from "@t3tools/contracts";
+import { compactTraceAttributes } from "../../observability/Attributes.ts";
+import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../../observability/Metrics.ts";
 import {
   GitCore,
   type ExecuteGitProgress,
@@ -327,6 +329,18 @@ interface Trace2Monitor {
   readonly flush: Effect.Effect<void, never>;
 }
 
+const nowUnixNano = (): bigint => BigInt(Date.now()) * 1_000_000n;
+
+const addCurrentSpanEvent = (name: string, attributes: Record<string, unknown>) =>
+  Effect.currentSpan.pipe(
+    Effect.tap((span) =>
+      Effect.sync(() => {
+        span.event(name, nowUnixNano(), compactTraceAttributes(attributes));
+      }),
+    ),
+    Effect.catch(() => Effect.void),
+  );
+
 function trace2ChildKey(record: Record<string, unknown>): string | null {
   const childId = record.child_id;
   if (typeof childId === "number" || typeof childId === "string") {
@@ -399,6 +413,9 @@ const createTrace2Monitor = Effect.fn("createTrace2Monitor")(function* (
 
     if (event === "child_start") {
       hookStartByChildKey.set(childKey, { hookName, startedAtMs: Date.now() });
+      yield* addCurrentSpanEvent("git.hook.started", {
+        hookName,
+      });
       if (progress.onHookStarted) {
         yield* progress.onHookStarted(hookName);
       }
@@ -407,12 +424,19 @@ const createTrace2Monitor = Effect.fn("createTrace2Monitor")(function* (
 
     if (event === "child_exit") {
       hookStartByChildKey.delete(childKey);
+      const code = traceRecord.success.code;
+      const exitCode = typeof code === "number" && Number.isInteger(code) ? code : null;
+      const durationMs = started ? Math.max(0, Date.now() - started.startedAtMs) : null;
+      yield* addCurrentSpanEvent("git.hook.finished", {
+        hookName: started?.hookName ?? hookName,
+        exitCode,
+        durationMs,
+      });
       if (progress.onHookFinished) {
-        const code = traceRecord.success.code;
         yield* progress.onHookFinished({
           hookName: started?.hookName ?? hookName,
-          exitCode: typeof code === "number" && Number.isInteger(code) ? code : null,
-          durationMs: started ? Math.max(0, Date.now() - started.startedAtMs) : null,
+          exitCode,
+          durationMs,
         });
       }
     }
@@ -564,13 +588,13 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
   const path = yield* Path.Path;
   const { worktreesDir } = yield* ServerConfig;
 
-  let execute: GitCoreShape["execute"];
+  let executeRaw: GitCoreShape["execute"];
 
   if (options?.executeOverride) {
-    execute = options.executeOverride;
+    executeRaw = options.executeOverride;
   } else {
     const commandSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-    execute = Effect.fnUntraced(function* (input) {
+    executeRaw = Effect.fnUntraced(function* (input) {
       const commandInput = {
         ...input,
         args: [...input.args],
@@ -670,6 +694,25 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
       );
     });
   }
+
+  const execute: GitCoreShape["execute"] = (input) =>
+    executeRaw(input).pipe(
+      withMetrics({
+        counter: gitCommandsTotal,
+        timer: gitCommandDuration,
+        attributes: {
+          operation: input.operation,
+        },
+      }),
+      Effect.withSpan(input.operation, {
+        kind: "client",
+        attributes: {
+          "git.operation": input.operation,
+          "git.cwd": input.cwd,
+          "git.args_count": input.args.length,
+        },
+      }),
+    );
 
   const executeGit = (
     operation: string,
