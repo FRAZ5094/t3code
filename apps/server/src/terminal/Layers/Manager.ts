@@ -613,6 +613,12 @@ export const makeTerminalManagerWithOptions = Effect.fn("makeTerminalManagerWith
           return cached.isWeb;
         }
 
+        for (const [p, entry] of webPortProbeCache) {
+          if (now - entry.checkedAt > webPortProbeCacheTtlMs) {
+            webPortProbeCache.delete(p);
+          }
+        }
+
         const isWeb = yield* webPortInspector(port).pipe(Effect.catch(() => Effect.succeed(false)));
         webPortProbeCache.set(port, {
           isWeb,
