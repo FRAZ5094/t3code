@@ -3,11 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   getGitStatusSnapshot,
-  getGitStatusSubscriptionKey,
-  pruneStatusByCwd,
   refreshGitStatus,
   resetGitStatusStateForTests,
-  retainGitStatusSync,
+  watchGitStatus,
 } from "./gitStatusState";
 
 function registerListener<T>(listeners: Set<(event: T) => void>, listener: (event: T) => void) {
@@ -51,9 +49,9 @@ afterEach(() => {
 });
 
 describe("gitStatusState", () => {
-  it("shares one live status subscription per cwd and updates the cached snapshot", () => {
-    const releaseA = retainGitStatusSync("/repo", gitClient);
-    const releaseB = retainGitStatusSync("/repo", gitClient);
+  it("shares one live subscription per cwd and updates the per-cwd atom snapshot", () => {
+    const releaseA = watchGitStatus("/repo", gitClient);
+    const releaseB = watchGitStatus("/repo", gitClient);
 
     expect(gitClient.onStatus).toHaveBeenCalledOnce();
     expect(getGitStatusSnapshot("/repo")).toEqual({
@@ -80,7 +78,7 @@ describe("gitStatusState", () => {
   });
 
   it("restarts the live stream when explicitly refreshed", () => {
-    const release = retainGitStatusSync("/repo", gitClient);
+    const release = watchGitStatus("/repo", gitClient);
 
     emitGitStatus(BASE_STATUS);
     refreshGitStatus("/repo");
@@ -94,22 +92,5 @@ describe("gitStatusState", () => {
     });
 
     release();
-  });
-
-  it("prunes stale cwd entries when the tracked cwd list shrinks", () => {
-    const current = new Map<string, GitStatusResult>([
-      ["/repo/a", BASE_STATUS],
-      ["/repo/b", { ...BASE_STATUS, branch: "feature/other" }],
-    ]);
-
-    expect(pruneStatusByCwd(current, ["/repo/b"])).toEqual(
-      new Map([["/repo/b", { ...BASE_STATUS, branch: "feature/other" }]]),
-    );
-  });
-
-  it("keeps the same subscription key when the tracked cwd set is unchanged", () => {
-    expect(getGitStatusSubscriptionKey(["/repo/b", "/repo/a", "/repo/a"])).toBe(
-      getGitStatusSubscriptionKey(["/repo/a", "/repo/b"]),
-    );
   });
 });
