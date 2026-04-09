@@ -18,13 +18,131 @@ const emitGenericToolPlaceholders = process.env.T3_ACP_EMIT_GENERIC_TOOL_PLACEHO
 const emitAskQuestion = process.env.T3_ACP_EMIT_ASK_QUESTION === "1";
 const failSetConfigOption = process.env.T3_ACP_FAIL_SET_CONFIG_OPTION === "1";
 const exitOnSetConfigOption = process.env.T3_ACP_EXIT_ON_SET_CONFIG_OPTION === "1";
+const promptResponseText = process.env.T3_ACP_PROMPT_RESPONSE_TEXT;
 const sessionId = "mock-session-1";
 
 let currentModeId = "ask";
 let currentModelId = "default";
+let parameterizedModelPicker = false;
+let currentReasoning = "medium";
+let currentContext = "272k";
+let currentFast = false;
 const cancelledSessions = new Set<string>();
 
 function configOptions(): ReadonlyArray<AcpSchema.SessionConfigOption> {
+  if (parameterizedModelPicker) {
+    const baseOptions: Array<AcpSchema.SessionConfigOption> = [
+      {
+        id: "mode",
+        name: "Mode",
+        category: "mode",
+        type: "select",
+        currentValue: currentModeId,
+        options: availableModes.map((mode) => ({
+          value: mode.id,
+          name: mode.name,
+          ...(mode.description ? { description: mode.description } : {}),
+        })),
+      },
+      {
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: currentModelId,
+        options: [
+          { value: "default", name: "Auto" },
+          { value: "composer-2", name: "Composer 2" },
+          { value: "gpt-5.4", name: "GPT-5.4" },
+          { value: "claude-opus-4-6", name: "Opus 4.6" },
+        ],
+      },
+    ];
+
+    switch (currentModelId) {
+      case "gpt-5.4":
+        return [
+          ...baseOptions,
+          {
+            id: "reasoning",
+            name: "Reasoning",
+            category: "thought_level",
+            type: "select",
+            currentValue: currentReasoning,
+            options: [
+              { value: "none", name: "None" },
+              { value: "low", name: "Low" },
+              { value: "medium", name: "Medium" },
+              { value: "high", name: "High" },
+              { value: "extra-high", name: "Extra High" },
+            ],
+          },
+          {
+            id: "context",
+            name: "Context",
+            category: "model_config",
+            type: "select",
+            currentValue: currentContext,
+            options: [
+              { value: "272k", name: "272K" },
+              { value: "1m", name: "1M" },
+            ],
+          },
+          {
+            id: "fast",
+            name: "Fast",
+            category: "model_config",
+            type: "select",
+            currentValue: String(currentFast),
+            options: [
+              { value: "false", name: "Off" },
+              { value: "true", name: "Fast" },
+            ],
+          },
+        ];
+      case "composer-2":
+        return [
+          ...baseOptions,
+          {
+            id: "fast",
+            name: "Fast",
+            category: "model_config",
+            type: "select",
+            currentValue: String(currentFast),
+            options: [
+              { value: "false", name: "Off" },
+              { value: "true", name: "Fast" },
+            ],
+          },
+        ];
+      case "claude-opus-4-6":
+        return [
+          ...baseOptions,
+          {
+            id: "reasoning",
+            name: "Reasoning",
+            category: "thought_level",
+            type: "select",
+            currentValue: currentReasoning,
+            options: [
+              { value: "low", name: "Low" },
+              { value: "medium", name: "Medium" },
+              { value: "high", name: "High" },
+            ],
+          },
+          {
+            id: "thinking",
+            name: "Thinking",
+            category: "model_config",
+            type: "boolean",
+            currentValue: true,
+          },
+        ];
+      default:
+        return baseOptions;
+    }
+  }
+
   return [
     {
       id: "model",
@@ -70,10 +188,14 @@ function modeState(): AcpSchema.SessionModeState {
 const program = Effect.gen(function* () {
   const agent = yield* EffectAcpAgent.AcpAgent;
 
-  yield* agent.handleInitialize(() =>
-    Effect.succeed({
-      protocolVersion: 1,
-      agentCapabilities: { loadSession: true },
+  yield* agent.handleInitialize((request) =>
+    Effect.sync(() => {
+      parameterizedModelPicker =
+        request.clientCapabilities?._meta?.parameterizedModelPicker === true;
+      return {
+        protocolVersion: 1,
+        agentCapabilities: { loadSession: true },
+      };
     }),
   );
 
@@ -120,8 +242,20 @@ const program = Effect.gen(function* () {
           },
         );
       }
+      if (request.configId === "mode" && typeof request.value === "string") {
+        currentModeId = request.value;
+      }
       if (request.configId === "model" && typeof request.value === "string") {
         currentModelId = request.value;
+      }
+      if (request.configId === "reasoning" && typeof request.value === "string") {
+        currentReasoning = request.value;
+      }
+      if (request.configId === "context" && typeof request.value === "string") {
+        currentContext = request.value;
+      }
+      if (request.configId === "fast") {
+        currentFast = request.value === true || request.value === "true";
       }
       return {
         configOptions: configOptions(),
@@ -351,7 +485,7 @@ const program = Effect.gen(function* () {
         sessionId: requestedSessionId,
         update: {
           sessionUpdate: "agent_message_chunk",
-          content: { type: "text", text: "hello from mock" },
+          content: { type: "text", text: promptResponseText ?? "hello from mock" },
         },
       });
 

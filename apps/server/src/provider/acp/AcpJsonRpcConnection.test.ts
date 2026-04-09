@@ -16,6 +16,51 @@ const mockAgentPath = path.join(__dirname, "../../../scripts/acp-mock-agent.ts")
 const bunExe = "bun";
 
 describe("AcpSessionRuntime", () => {
+  it.effect("merges custom initialize client capabilities into the ACP handshake", () => {
+    const requestEvents: Array<AcpSessionRequestLogEvent> = [];
+    return Effect.gen(function* () {
+      const runtime = yield* AcpSessionRuntime;
+      yield* runtime.start();
+
+      const initializeStarted = requestEvents.find(
+        (event) => event.method === "initialize" && event.status === "started",
+      );
+      expect(initializeStarted?.payload).toMatchObject({
+        protocolVersion: 1,
+        clientCapabilities: {
+          fs: { readTextFile: false, writeTextFile: false },
+          terminal: false,
+          _meta: { parameterizedModelPicker: true },
+        },
+      });
+
+      yield* runtime.close;
+    }).pipe(
+      Effect.provide(
+        AcpSessionRuntime.layer({
+          spawn: {
+            command: bunExe,
+            args: [mockAgentPath],
+          },
+          cwd: process.cwd(),
+          clientCapabilities: {
+            _meta: {
+              parameterizedModelPicker: true,
+            },
+          },
+          clientInfo: { name: "t3-test", version: "0.0.0" },
+          authMethodId: "test",
+          requestLogger: (event) =>
+            Effect.sync(() => {
+              requestEvents.push(event);
+            }),
+        }),
+      ),
+      Effect.scoped,
+      Effect.provide(NodeServices.layer),
+    );
+  });
+
   it.effect("starts a session, prompts, and emits normalized events against the mock agent", () =>
     Effect.gen(function* () {
       const runtime = yield* AcpSessionRuntime;

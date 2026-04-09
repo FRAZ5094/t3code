@@ -39,6 +39,7 @@ export interface AcpSessionRuntimeOptions {
   readonly spawn: AcpSpawnInput;
   readonly cwd: string;
   readonly resumeSessionId?: string;
+  readonly clientCapabilities?: EffectAcpSchema.InitializeRequest["clientCapabilities"];
   readonly clientInfo: {
     readonly name: string;
     readonly version: string;
@@ -89,6 +90,7 @@ export interface AcpSessionRuntimeShape {
   readonly start: () => Effect.Effect<AcpSessionRuntimeStartResult, EffectAcpErrors.AcpError>;
   readonly events: Stream.Stream<AcpParsedSessionEvent, never>;
   readonly getModeState: Effect.Effect<AcpSessionModeState | undefined>;
+  readonly getConfigOptions: Effect.Effect<ReadonlyArray<EffectAcpSchema.SessionConfigOption>>;
   readonly prompt: (
     payload: Omit<EffectAcpSchema.PromptRequest, "sessionId">,
   ) => Effect.Effect<EffectAcpSchema.PromptResponse, EffectAcpErrors.AcpError>;
@@ -239,6 +241,20 @@ const makeAcpSessionRuntime = (
     );
     const close = Scope.close(runtimeScope, Exit.void).pipe(Effect.asVoid);
 
+    const initializeClientCapabilities = {
+      fs: {
+        readTextFile: false,
+        writeTextFile: false,
+        ...options.clientCapabilities?.fs,
+      },
+      terminal: options.clientCapabilities?.terminal ?? false,
+      ...(options.clientCapabilities?.auth ? { auth: options.clientCapabilities.auth } : {}),
+      ...(options.clientCapabilities?.elicitation
+        ? { elicitation: options.clientCapabilities.elicitation }
+        : {}),
+      ...(options.clientCapabilities?._meta ? { _meta: options.clientCapabilities._meta } : {}),
+    } satisfies NonNullable<EffectAcpSchema.InitializeRequest["clientCapabilities"]>;
+
     const getStartedState = Effect.gen(function* () {
       const state = yield* Ref.get(startStateRef);
       if (state._tag === "Started") {
@@ -338,10 +354,7 @@ const makeAcpSessionRuntime = (
     const startOnce = Effect.gen(function* () {
       const initializePayload = {
         protocolVersion: 1,
-        clientCapabilities: {
-          fs: { readTextFile: false, writeTextFile: false },
-          terminal: false,
-        },
+        clientCapabilities: initializeClientCapabilities,
         clientInfo: options.clientInfo,
       } satisfies EffectAcpSchema.InitializeRequest;
 
@@ -470,6 +483,7 @@ const makeAcpSessionRuntime = (
       start: () => start,
       events: Stream.fromQueue(eventQueue),
       getModeState: Ref.get(modeStateRef),
+      getConfigOptions: Ref.get(configOptionsRef),
       prompt: (payload) =>
         getStartedState.pipe(
           Effect.flatMap((started) => {

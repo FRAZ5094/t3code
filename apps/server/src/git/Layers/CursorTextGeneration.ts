@@ -1,5 +1,5 @@
-import { Effect, Layer, Option, Schema, Stream } from "effect";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { Effect, Layer, Option, Ref, Schema } from "effect";
+import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { CursorModelSelection } from "@t3tools/contracts";
 import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
@@ -16,23 +16,14 @@ import {
   buildPrContentPrompt,
   buildThreadTitlePrompt,
 } from "../Prompts.ts";
+import { sanitizeCommitSubject, sanitizePrTitle, sanitizeThreadTitle } from "../Utils.ts";
 import {
-  normalizeCliError,
-  sanitizeCommitSubject,
-  sanitizePrTitle,
-  sanitizeThreadTitle,
-} from "../Utils.ts";
-import { resolveCursorAgentModel } from "../../provider/Layers/CursorProvider.ts";
+  applyCursorAcpModelSelection,
+  makeCursorAcpRuntime,
+} from "../../provider/acp/CursorAcpSupport.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 
 const CURSOR_TIMEOUT_MS = 180_000;
-
-const CursorOutputEnvelope = Schema.Struct({
-  type: Schema.String,
-  subtype: Schema.optional(Schema.String),
-  is_error: Schema.optional(Schema.Boolean),
-  result: Schema.optional(Schema.String),
-});
 
 function extractJsonObject(raw: string): string {
   const trimmed = raw.trim();
@@ -82,24 +73,34 @@ function extractJsonObject(raw: string): string {
   return trimmed.slice(start);
 }
 
+function mapCursorAcpError(
+  operation:
+    | "generateCommitMessage"
+    | "generatePrContent"
+    | "generateBranchName"
+    | "generateThreadTitle",
+  detail: string,
+  cause: unknown,
+): TextGenerationError {
+  return new TextGenerationError({
+    operation,
+    detail,
+    ...(cause !== undefined ? { cause } : {}),
+  });
+}
+
+function isTextGenerationError(error: unknown): error is TextGenerationError {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "_tag" in error &&
+    error._tag === "TextGenerationError"
+  );
+}
+
 const makeCursorTextGeneration = Effect.gen(function* () {
   const commandSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const serverSettingsService = yield* Effect.service(ServerSettingsService);
-
-  const readStreamAsString = <E>(
-    operation: string,
-    stream: Stream.Stream<Uint8Array, E>,
-  ): Effect.Effect<string, TextGenerationError> =>
-    stream.pipe(
-      Stream.decodeText(),
-      Stream.runFold(
-        () => "",
-        (acc, chunk) => acc + chunk,
-      ),
-      Effect.mapError((cause) =>
-        normalizeCliError("agent", operation, cause, "Failed to collect process output"),
-      ),
-    );
 
   const runCursorJson = <S extends Schema.Top>({
     operation,
@@ -124,74 +125,47 @@ const makeCursorTextGeneration = Effect.gen(function* () {
         (settings) => settings.providers.cursor,
       ).pipe(Effect.catch(() => Effect.undefined));
 
-      const runCursorCommand = Effect.gen(function* () {
-        const command = ChildProcess.make(
-          cursorSettings?.binaryPath || "agent",
-          [
-            "-p",
-            "--trust",
-            "--mode",
-            "ask",
-            "--output-format",
-            "json",
-            "--model",
-            resolveCursorAgentModel(modelSelection.model, modelSelection.options),
-          ],
-          {
-            cwd,
-            shell: process.platform === "win32",
-            stdin: {
-              stream: Stream.encodeText(Stream.make(prompt)),
-            },
-          },
-        );
-
-        const child = yield* commandSpawner
-          .spawn(command)
-          .pipe(
-            Effect.mapError((cause) =>
-              normalizeCliError("agent", operation, cause, "Failed to spawn Cursor Agent process"),
-            ),
-          );
-
-        const [stdout, stderr, exitCode] = yield* Effect.all(
-          [
-            readStreamAsString(operation, child.stdout),
-            readStreamAsString(operation, child.stderr),
-            child.exitCode.pipe(
-              Effect.mapError((cause) =>
-                normalizeCliError(
-                  "agent",
-                  operation,
-                  cause,
-                  "Failed to read Cursor Agent exit code",
-                ),
-              ),
-            ),
-          ],
-          { concurrency: "unbounded" },
-        );
-
-        const commandOutput = { stdout, stderr, exitCode };
-
-        if (exitCode !== 0) {
-          const stderrDetail = stderr.trim();
-          const stdoutDetail = stdout.trim();
-          const detail = stderrDetail.length > 0 ? stderrDetail : stdoutDetail;
-          return yield* new TextGenerationError({
-            operation,
-            detail:
-              detail.length > 0
-                ? `Cursor Agent command failed: ${detail}`
-                : `Cursor Agent command failed with code ${exitCode}.`,
-          });
-        }
-
-        return commandOutput;
+      const outputRef = yield* Ref.make("");
+      const runtime = yield* makeCursorAcpRuntime({
+        cursorSettings,
+        childProcessSpawner: commandSpawner,
+        cwd,
+        clientInfo: { name: "t3-code-git-text", version: "0.0.0" },
       });
 
-      const commandOutput = yield* runCursorCommand.pipe(
-        Effect.scoped,
+      yield* runtime.handleSessionUpdate((notification) => {
+        const update = notification.update;
+        if (update.sessionUpdate !== "agent_message_chunk") {
+          return Effect.void;
+        }
+        const content = update.content;
+        if (content.type !== "text") {
+          return Effect.void;
+        }
+        return Ref.update(outputRef, (current) => current + content.text);
+      });
+
+      const promptResult = yield* Effect.gen(function* () {
+        yield* runtime.start();
+        yield* Effect.ignore(runtime.setMode("ask"));
+        yield* applyCursorAcpModelSelection({
+          runtime,
+          model: modelSelection.model,
+          modelOptions: modelSelection.options,
+          mapError: ({ cause, configId, step }) =>
+            mapCursorAcpError(
+              operation,
+              step === "set-config-option"
+                ? `Failed to set Cursor ACP config option "${configId}" for text generation.`
+                : "Failed to set Cursor ACP base model for text generation.",
+              cause,
+            ),
+        });
+
+        return yield* runtime.prompt({
+          prompt: [{ type: "text", text: prompt }],
+        });
+      }).pipe(
         Effect.timeoutOption(CURSOR_TIMEOUT_MS),
         Effect.flatMap(
           Option.match({
@@ -205,38 +179,21 @@ const makeCursorTextGeneration = Effect.gen(function* () {
             onSome: (value) => Effect.succeed(value),
           }),
         ),
-      );
-
-      const envelope = yield* Schema.decodeEffect(Schema.fromJsonString(CursorOutputEnvelope))(
-        commandOutput.stdout,
-      ).pipe(
-        Effect.catchTag("SchemaError", (cause) =>
-          Effect.fail(
-            new TextGenerationError({
-              operation,
-              detail: "Cursor Agent returned unexpected output format.",
-              cause,
-            }),
-          ),
+        Effect.mapError((cause) =>
+          isTextGenerationError(cause)
+            ? cause
+            : mapCursorAcpError(operation, "Cursor ACP request failed.", cause),
         ),
       );
 
-      if (
-        envelope.type !== "result" ||
-        envelope.subtype !== "success" ||
-        envelope.is_error === true
-      ) {
-        return yield* new TextGenerationError({
-          operation,
-          detail: "Cursor Agent returned an unsuccessful result.",
-        });
-      }
-
-      const rawResult = envelope.result?.trim();
+      const rawResult = (yield* Ref.get(outputRef)).trim();
       if (!rawResult) {
         return yield* new TextGenerationError({
           operation,
-          detail: "Cursor Agent returned empty output.",
+          detail:
+            promptResult.stopReason === "cancelled"
+              ? "Cursor ACP request was cancelled."
+              : "Cursor Agent returned empty output.",
         });
       }
 
@@ -253,7 +210,14 @@ const makeCursorTextGeneration = Effect.gen(function* () {
           ),
         ),
       );
-    });
+    }).pipe(
+      Effect.mapError((cause) =>
+        isTextGenerationError(cause)
+          ? cause
+          : mapCursorAcpError(operation, "Cursor ACP text generation failed.", cause),
+      ),
+      Effect.scoped,
+    );
 
   const generateCommitMessage: TextGenerationShape["generateCommitMessage"] = Effect.fn(
     "CursorTextGeneration.generateCommitMessage",
