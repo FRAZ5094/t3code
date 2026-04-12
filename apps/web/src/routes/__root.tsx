@@ -13,6 +13,7 @@ import { QueryClient, useQueryClient } from "@tanstack/react-query";
 import { APP_DISPLAY_NAME } from "../branding";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
+import { StartupPendingSurface } from "../components/StartupPendingSurface";
 import {
   SlowRpcAckToastCoordinator,
   WebSocketConnectionCoordinator,
@@ -59,6 +60,7 @@ export const Route = createRootRouteWithContext<{
   },
   component: RootRouteView,
   errorComponent: RootRouteErrorView,
+  pendingComponent: RootRoutePendingView,
   head: () => ({
     meta: [{ name: "title", content: APP_DISPLAY_NAME }],
   }),
@@ -145,6 +147,15 @@ function RootRouteErrorView({ error, reset }: ErrorComponentProps) {
         </details>
       </section>
     </div>
+  );
+}
+
+function RootRoutePendingView() {
+  return (
+    <StartupPendingSurface
+      title="Connecting to T3 Server"
+      detail="Preparing the local environment and restoring your session."
+    />
   );
 }
 

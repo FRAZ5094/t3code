@@ -1,6 +1,7 @@
 import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
 import { useEffect } from "react";
 
+import { StartupPendingSurface } from "../components/StartupPendingSurface";
 import { useCommandPaletteStore } from "../commandPaletteStore";
 import {
   ensurePrimaryEnvironmentReady,
@@ -121,4 +122,14 @@ export const Route = createFileRoute("/_chat")({
     }
   },
   component: ChatRouteLayout,
+  pendingComponent: ChatRoutePendingView,
 });
+
+function ChatRoutePendingView() {
+  return (
+    <StartupPendingSurface
+      title="Connecting to T3 Server"
+      detail="Waiting for the local server to finish connecting before loading your threads."
+    />
+  );
+}

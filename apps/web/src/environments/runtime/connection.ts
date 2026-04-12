@@ -263,15 +263,21 @@ export function createEnvironmentConnection(
     },
   );
 
-  const unsubConfig = input.client.server.subscribeConfig(
-    (event: Parameters<Parameters<WsRpcClient["server"]["subscribeConfig"]>[0]>[0]) => {
-      if (event.type !== "snapshot") {
-        return;
-      }
-      observeEnvironmentIdentity(event.config.environment.environmentId, "server config snapshot");
-      input.onConfigSnapshot?.(event.config);
-    },
-  );
+  const unsubConfig =
+    input.kind === "saved" || input.onConfigSnapshot
+      ? input.client.server.subscribeConfig(
+          (event: Parameters<Parameters<WsRpcClient["server"]["subscribeConfig"]>[0]>[0]) => {
+            if (event.type !== "snapshot") {
+              return;
+            }
+            observeEnvironmentIdentity(
+              event.config.environment.environmentId,
+              "server config snapshot",
+            );
+            input.onConfigSnapshot?.(event.config);
+          },
+        )
+      : () => {};
 
   const unsubDomainEvent = input.client.orchestration.onDomainEvent(
     (event: Parameters<Parameters<WsRpcClient["orchestration"]["onDomainEvent"]>[0]>[0]) => {
