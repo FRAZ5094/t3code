@@ -264,7 +264,7 @@ export function createEnvironmentConnection(
   );
 
   const unsubConfig =
-    input.kind === "saved" || input.onConfigSnapshot
+    input.kind === "saved" || input.kind === "primary" || input.onConfigSnapshot
       ? input.client.server.subscribeConfig(
           (event: Parameters<Parameters<WsRpcClient["server"]["subscribeConfig"]>[0]>[0]) => {
             if (event.type !== "snapshot") {

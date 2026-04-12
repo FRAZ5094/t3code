@@ -448,10 +448,7 @@ function ensureInitialBackendWindowOpen(): void {
       if (isBackendReadinessAborted(error)) {
         return;
       }
-      writeDesktopLogHeader(
-        `bootstrap backend readiness warning message=${formatErrorMessage(error)}`,
-      );
-      console.warn("[desktop] backend readiness check timed out during packaged bootstrap", error);
+      handleFatalStartupError("backend-readiness", error);
     })
     .finally(() => {
       if (backendInitialWindowOpenInFlight === nextOpen) {
