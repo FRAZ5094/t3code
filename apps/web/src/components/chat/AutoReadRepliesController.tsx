@@ -55,9 +55,15 @@ export function AutoReadRepliesController({
   const completionFlushedRef = useRef(false);
   const pendingChunksRef = useRef<SpeakableChunk[]>([]);
   const activeChunkRef = useRef<SpeakableChunk | null>(null);
+  const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const speakTimeoutIdRef = useRef<number | null>(null);
   const speechGenerationRef = useRef(0);
 
   const clearTracking = useEffectEvent((cancelSpeech: boolean) => {
+    if (speakTimeoutIdRef.current !== null) {
+      window.clearTimeout(speakTimeoutIdRef.current);
+      speakTimeoutIdRef.current = null;
+    }
     if (cancelSpeech && hasSpeechSynthesisSupport()) {
       window.speechSynthesis.cancel();
     }
@@ -70,6 +76,7 @@ export function AutoReadRepliesController({
     completionFlushedRef.current = false;
     pendingChunksRef.current = [];
     activeChunkRef.current = null;
+    activeUtteranceRef.current = null;
   });
 
   const maybeResetAfterQueueDrain = useEffectEvent(() => {
@@ -102,6 +109,7 @@ export function AutoReadRepliesController({
       }
 
       activeChunkRef.current = null;
+      activeUtteranceRef.current = null;
       spokenOffsetRef.current = Math.max(spokenOffsetRef.current, chunk.endOffset);
       flushPendingChunks();
       maybeResetAfterQueueDrain();
@@ -132,11 +140,30 @@ export function AutoReadRepliesController({
     const speechGeneration = speechGenerationRef.current;
     const utterance = new SpeechSynthesisUtterance(nextChunk.text);
     speechPrimedRef.current = true;
+    activeUtteranceRef.current = utterance;
     const handleSettled = () => {
       handleUtteranceSettled(messageId, nextChunk, speechGeneration);
     };
     attachUtteranceSettledHandlers(utterance, handleSettled);
-    window.speechSynthesis.speak(utterance);
+    speakTimeoutIdRef.current = window.setTimeout(() => {
+      speakTimeoutIdRef.current = null;
+      if (
+        speechGenerationRef.current !== speechGeneration ||
+        activeUtteranceRef.current !== utterance ||
+        activeMessageIdRef.current !== messageId
+      ) {
+        return;
+      }
+
+      try {
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+        window.speechSynthesis.speak(utterance);
+      } catch {
+        handleUtteranceSettled(messageId, nextChunk, speechGeneration);
+      }
+    }, 0);
   });
 
   const enqueueSpeakableChunks = useEffectEvent((message: ChatMessage) => {
@@ -293,6 +320,11 @@ export function AutoReadRepliesController({
       observedLatestMessageIdRef.current = null;
       observedMessageCountRef.current = 0;
       speechPrimedRef.current = false;
+      activeUtteranceRef.current = null;
+      if (speakTimeoutIdRef.current !== null) {
+        window.clearTimeout(speakTimeoutIdRef.current);
+        speakTimeoutIdRef.current = null;
+      }
       queuedOffsetRef.current = 0;
       spokenOffsetRef.current = 0;
       completionFlushedRef.current = false;
