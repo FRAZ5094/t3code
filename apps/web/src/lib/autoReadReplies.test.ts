@@ -86,6 +86,26 @@ describe("extractSpeakableChunks", () => {
     });
   });
 
+  it("keeps ordered-list markers attached to their item content", () => {
+    const text = "1. Penguins are birds.\n2. ";
+
+    expect(
+      extractSpeakableChunks({
+        text,
+        startOffset: 0,
+        isComplete: false,
+      }),
+    ).toEqual({
+      chunks: [
+        {
+          text: "1. Penguins are birds.",
+          endOffset: text.indexOf("2."),
+        },
+      ],
+      nextOffset: text.indexOf("2."),
+    });
+  });
+
   it("emits paragraph chunks on blank-line boundaries", () => {
     const text = "Alpha. Beta.\n\nGamma.";
 
