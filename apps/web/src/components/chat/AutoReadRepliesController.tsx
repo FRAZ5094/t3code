@@ -44,6 +44,7 @@ export function AutoReadRepliesController({
   threadId,
   messages,
 }: AutoReadRepliesControllerProps) {
+  const speechPrimedRef = useRef(false);
   const observedThreadIdRef = useRef<ThreadId | null>(null);
   const observedLatestMessageIdRef = useRef<ChatMessage["id"] | null>(null);
   const observedMessageCountRef = useRef(0);
@@ -130,6 +131,7 @@ export function AutoReadRepliesController({
     activeChunkRef.current = nextChunk;
     const speechGeneration = speechGenerationRef.current;
     const utterance = new SpeechSynthesisUtterance(nextChunk.text);
+    speechPrimedRef.current = true;
     const handleSettled = () => {
       handleUtteranceSettled(messageId, nextChunk, speechGeneration);
     };
@@ -243,6 +245,42 @@ export function AutoReadRepliesController({
     enqueueSpeakableChunks(latestAssistantMessage);
   }, [enabled, messages, threadId]);
 
+  useEffect(() => {
+    if (!enabled || !hasSpeechSynthesisSupport() || speechPrimedRef.current) {
+      return;
+    }
+
+    const primeSpeechSynthesis = () => {
+      if (!hasSpeechSynthesisSupport() || speechPrimedRef.current) {
+        return;
+      }
+
+      speechPrimedRef.current = true;
+      const utterance = new SpeechSynthesisUtterance(".");
+      utterance.volume = 0;
+      utterance.rate = 10;
+      window.speechSynthesis.speak(utterance);
+      window.speechSynthesis.cancel();
+    };
+
+    const activationEvents: Array<keyof WindowEventMap> = [
+      "pointerdown",
+      "mousedown",
+      "touchstart",
+      "keydown",
+    ];
+
+    for (const eventType of activationEvents) {
+      window.addEventListener(eventType, primeSpeechSynthesis, { capture: true, once: true });
+    }
+
+    return () => {
+      for (const eventType of activationEvents) {
+        window.removeEventListener(eventType, primeSpeechSynthesis, { capture: true });
+      }
+    };
+  }, [enabled]);
+
   useEffect(
     () => () => {
       if (hasSpeechSynthesisSupport()) {
@@ -254,6 +292,7 @@ export function AutoReadRepliesController({
       observedThreadIdRef.current = null;
       observedLatestMessageIdRef.current = null;
       observedMessageCountRef.current = 0;
+      speechPrimedRef.current = false;
       queuedOffsetRef.current = 0;
       spokenOffsetRef.current = 0;
       completionFlushedRef.current = false;
