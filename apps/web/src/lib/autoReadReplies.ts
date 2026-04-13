@@ -22,24 +22,13 @@ const FALLBACK_SPLIT_PEEK = 160;
 export function findLatestAssistantMessage(
   messages: ReadonlyArray<ChatMessage>,
 ): ChatMessage | null {
-  return findLatestMessageByRole(messages, "assistant");
-}
-
-export function findLatestUserMessage(messages: ReadonlyArray<ChatMessage>): ChatMessage | null {
-  return findLatestMessageByRole(messages, "user");
-}
-
-function findLatestMessageByRole(
-  messages: ReadonlyArray<ChatMessage>,
-  role: ChatMessage["role"],
-): ChatMessage | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (!message) {
       continue;
     }
 
-    if (message.role === role) {
+    if (message.role === "assistant") {
       return message;
     }
   }
