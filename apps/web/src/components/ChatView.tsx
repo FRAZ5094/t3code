@@ -187,28 +187,6 @@ const EMPTY_PROPOSED_PLANS: Thread["proposedPlans"] = [];
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
 
-function speakUserSendProbe(text: string): void {
-  if (
-    typeof window === "undefined" ||
-    typeof window.speechSynthesis?.speak !== "function" ||
-    typeof SpeechSynthesisUtterance !== "function"
-  ) {
-    return;
-  }
-
-  const utterance = new SpeechSynthesisUtterance(text);
-  window.setTimeout(() => {
-    try {
-      if (window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
-      }
-      window.speechSynthesis.speak(utterance);
-    } catch {
-      // Keep the send path unaffected if speech synthesis fails.
-    }
-  }, 0);
-}
-
 type ThreadPlanCatalogEntry = Pick<Thread, "id" | "proposedPlans">;
 
 function useThreadPlanCatalog(threadIds: readonly ThreadId[]): ThreadPlanCatalogEntry[] {
@@ -2542,9 +2520,6 @@ export default function ChatView(props: ChatViewProps) {
         streaming: false,
       },
     ]);
-    if (settings.autoReadReplies) {
-      speakUserSendProbe("Message sent.");
-    }
 
     setThreadError(threadIdForSend, null);
     if (expiredTerminalContextCount > 0) {

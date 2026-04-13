@@ -153,56 +153,18 @@ function findLastSentenceBoundaryEnd(
 ): number | null {
   let lastBoundaryEnd: number | null = null;
   const slice = text.slice(startOffset, endOffset);
-  const sentenceBoundaryPattern = /[.!?…][)"'\]}›»”’]*/g;
+  const sentenceBoundaryPattern = /[.!?…][)"'\]\}›»”’]*/g;
 
   for (const match of slice.matchAll(sentenceBoundaryPattern)) {
     const matchIndex = match.index ?? 0;
-    const punctuationOffset = startOffset + matchIndex;
-    const boundaryEndOffset = punctuationOffset + match[0].length;
+    const boundaryEndOffset = startOffset + matchIndex + match[0].length;
 
-    if (
-      !isOrderedListMarkerBoundary(text, punctuationOffset) &&
-      (boundaryEndOffset >= text.length || isWhitespace(text.charCodeAt(boundaryEndOffset)))
-    ) {
+    if (boundaryEndOffset >= text.length || isWhitespace(text.charCodeAt(boundaryEndOffset))) {
       lastBoundaryEnd = boundaryEndOffset;
     }
   }
 
   return lastBoundaryEnd;
-}
-
-function isOrderedListMarkerBoundary(text: string, punctuationOffset: number): boolean {
-  if (text.charCodeAt(punctuationOffset) !== 46) {
-    return false;
-  }
-
-  let lineStart = punctuationOffset;
-  while (lineStart > 0 && text.charCodeAt(lineStart - 1) !== 10) {
-    lineStart -= 1;
-  }
-
-  let markerStart = lineStart;
-  while (
-    markerStart < punctuationOffset &&
-    (text.charCodeAt(markerStart) === 9 || text.charCodeAt(markerStart) === 32)
-  ) {
-    markerStart += 1;
-  }
-
-  if (markerStart === punctuationOffset) {
-    return false;
-  }
-
-  for (let index = markerStart; index < punctuationOffset; index += 1) {
-    const charCode = text.charCodeAt(index);
-    if (charCode < 48 || charCode > 57) {
-      return false;
-    }
-  }
-
-  return (
-    punctuationOffset + 1 >= text.length || isWhitespace(text.charCodeAt(punctuationOffset + 1))
-  );
 }
 
 function findLastSingleNewlineBoundaryEnd(
