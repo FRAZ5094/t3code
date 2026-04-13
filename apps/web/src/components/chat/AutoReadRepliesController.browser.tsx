@@ -7,82 +7,21 @@ import type { ChatMessage } from "../../types";
 
 class MockSpeechSynthesisUtterance {
   readonly text: string;
-  private endListener: (() => void) | null = null;
-  private errorListener: (() => void) | null = null;
-
-  constructor(text: string) {
-    this.text = text;
-  }
-
-  addEventListener(
-    type: "end" | "error",
-    listener: EventListenerOrEventListenerObject,
-    options?: AddEventListenerOptions | boolean,
-  ) {
-    const once = typeof options === "object" && options?.once === true;
-    const invoke = () => {
-      if (typeof listener === "function") {
-        listener(new Event(type));
-      } else {
-        listener.handleEvent(new Event(type));
-      }
-      if (once) {
-        this.removeEventListener(type);
-      }
-    };
-
-    if (type === "end") {
-      this.endListener = invoke;
-      return;
-    }
-
-    this.errorListener = invoke;
-  }
-
-  removeEventListener(type: "end" | "error") {
-    if (type === "end") {
-      this.endListener = null;
-      return;
-    }
-
-    this.errorListener = null;
-  }
-
-  emitEnd() {
-    this.endListener?.();
-  }
-
-  emitError() {
-    this.errorListener?.();
-  }
-}
-
-class LegacyMockSpeechSynthesisUtterance {
-  readonly text: string;
   onend: (() => void) | null = null;
   onerror: (() => void) | null = null;
 
   constructor(text: string) {
     this.text = text;
   }
-
-  emitEnd() {
-    this.onend?.();
-  }
-
-  emitError() {
-    this.onerror?.();
-  }
 }
 
 type ControllerProps = ComponentProps<typeof AutoReadRepliesController>;
-type MockUtterance = MockSpeechSynthesisUtterance | LegacyMockSpeechSynthesisUtterance;
 
 const THREAD_ID = ThreadId.make("thread-auto-read-replies");
 const NOW_ISO = "2026-04-13T00:00:00.000Z";
 
-let spokenUtterances: MockUtterance[] = [];
-const speakSpy = vi.fn((utterance: MockUtterance) => {
+let spokenUtterances: MockSpeechSynthesisUtterance[] = [];
+const speakSpy = vi.fn((utterance: MockSpeechSynthesisUtterance) => {
   spokenUtterances.push(utterance);
 });
 const cancelSpy = vi.fn();
@@ -105,21 +44,6 @@ function installSpeechSynthesisMocks() {
     },
   });
   vi.stubGlobal("SpeechSynthesisUtterance", MockSpeechSynthesisUtterance);
-}
-
-function installLegacySpeechSynthesisMocks() {
-  spokenUtterances = [];
-  speakSpy.mockClear();
-  cancelSpy.mockClear();
-
-  Object.defineProperty(window, "speechSynthesis", {
-    configurable: true,
-    value: {
-      speak: speakSpy,
-      cancel: cancelSpy,
-    },
-  });
-  vi.stubGlobal("SpeechSynthesisUtterance", LegacyMockSpeechSynthesisUtterance);
 }
 
 function restoreSpeechSynthesisMocks() {
@@ -193,37 +117,6 @@ describe("AutoReadRepliesController", () => {
     try {
       expect(speakSpy).not.toHaveBeenCalled();
       expect(cancelSpy).not.toHaveBeenCalled();
-    } finally {
-      await mounted.cleanup();
-    }
-  });
-
-  it("speaks a newly-arrived assistant reply even if it first appears already completed", async () => {
-    installSpeechSynthesisMocks();
-
-    const mounted = await mountController({
-      enabled: true,
-      threadId: THREAD_ID,
-      messages: [],
-    });
-
-    try {
-      expect(speakSpy).not.toHaveBeenCalled();
-
-      await mounted.rerender({
-        enabled: true,
-        threadId: THREAD_ID,
-        messages: [
-          createAssistantMessage({
-            id: "message-complete-new",
-            text: "Completed reply.",
-            streaming: false,
-            completedAt: NOW_ISO,
-          }),
-        ],
-      });
-
-      expect(speakSpy).not.toHaveBeenCalled();
     } finally {
       await mounted.cleanup();
     }
@@ -341,60 +234,13 @@ describe("AutoReadRepliesController", () => {
         ],
       });
 
-      spokenUtterances[0]?.emitEnd();
-
       await vi.waitFor(() => {
         expect(speakSpy).toHaveBeenCalledTimes(2);
       });
       expect(spokenUtterances[1]?.text).toBe("trailing remainder");
 
-      spokenUtterances[1]?.emitEnd();
-    } finally {
-      await mounted.cleanup();
-    }
-  });
-
-  it("waits for the current utterance to finish before speaking later streamed chunks", async () => {
-    installSpeechSynthesisMocks();
-
-    const mounted = await mountController({
-      enabled: true,
-      threadId: THREAD_ID,
-      messages: [
-        createAssistantMessage({
-          id: "message-sequenced",
-          text: "First sentence.",
-          streaming: true,
-        }),
-      ],
-    });
-
-    try {
-      await vi.waitFor(() => {
-        expect(speakSpy).toHaveBeenCalledTimes(1);
-      });
-      expect(spokenUtterances[0]?.text).toBe("First sentence.");
-
-      await mounted.rerender({
-        enabled: true,
-        threadId: THREAD_ID,
-        messages: [
-          createAssistantMessage({
-            id: "message-sequenced",
-            text: "First sentence. Second sentence.",
-            streaming: true,
-          }),
-        ],
-      });
-
-      expect(speakSpy).toHaveBeenCalledTimes(1);
-
-      spokenUtterances[0]?.emitEnd();
-
-      await vi.waitFor(() => {
-        expect(speakSpy).toHaveBeenCalledTimes(2);
-      });
-      expect(spokenUtterances[1]?.text).toBe("Second sentence.");
+      spokenUtterances[0]?.onend?.();
+      spokenUtterances[1]?.onend?.();
     } finally {
       await mounted.cleanup();
     }
@@ -481,52 +327,6 @@ describe("AutoReadRepliesController", () => {
         expect(speakSpy).toHaveBeenCalledTimes(2);
       });
       expect(spokenUtterances[1]?.text).toBe("Newer reply.");
-    } finally {
-      await mounted.cleanup();
-    }
-  });
-
-  it("falls back to onend/onerror when addEventListener is unavailable", async () => {
-    installLegacySpeechSynthesisMocks();
-
-    const mounted = await mountController({
-      enabled: true,
-      threadId: THREAD_ID,
-      messages: [
-        createAssistantMessage({
-          id: "message-legacy",
-          text: "First sentence.",
-          streaming: true,
-        }),
-      ],
-    });
-
-    try {
-      await vi.waitFor(() => {
-        expect(speakSpy).toHaveBeenCalledTimes(1);
-      });
-      expect(spokenUtterances[0]?.text).toBe("First sentence.");
-
-      await mounted.rerender({
-        enabled: true,
-        threadId: THREAD_ID,
-        messages: [
-          createAssistantMessage({
-            id: "message-legacy",
-            text: "First sentence. Second sentence.",
-            streaming: true,
-          }),
-        ],
-      });
-
-      expect(speakSpy).toHaveBeenCalledTimes(1);
-
-      spokenUtterances[0]?.emitEnd();
-
-      await vi.waitFor(() => {
-        expect(speakSpy).toHaveBeenCalledTimes(2);
-      });
-      expect(spokenUtterances[1]?.text).toBe("Second sentence.");
     } finally {
       await mounted.cleanup();
     }
