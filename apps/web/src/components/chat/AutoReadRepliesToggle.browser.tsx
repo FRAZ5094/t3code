@@ -45,6 +45,44 @@ vi.mock("../ui/sidebar", () => ({
 const LOCAL_ENVIRONMENT_ID = EnvironmentId.make("environment-local");
 const THREAD_ID = ThreadId.make("thread-auto-read-replies");
 const KEYBINDINGS: ResolvedKeybindingsConfig = [];
+const speakSpy = vi.fn();
+const originalSpeechSynthesisDescriptor = Object.getOwnPropertyDescriptor(
+  window,
+  "speechSynthesis",
+);
+
+class MockSpeechSynthesisUtterance {
+  readonly text: string;
+
+  constructor(text: string) {
+    this.text = text;
+  }
+}
+
+function installSpeechSynthesisMocks() {
+  speakSpy.mockClear();
+
+  Object.defineProperty(window, "speechSynthesis", {
+    configurable: true,
+    value: {
+      speak: speakSpy,
+    },
+  });
+  vi.stubGlobal("SpeechSynthesisUtterance", MockSpeechSynthesisUtterance);
+}
+
+function restoreSpeechSynthesisMocks() {
+  vi.unstubAllGlobals();
+
+  if (originalSpeechSynthesisDescriptor) {
+    Object.defineProperty(window, "speechSynthesis", originalSpeechSynthesisDescriptor);
+  } else {
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: undefined,
+    });
+  }
+}
 
 async function mountChatHeader() {
   const host = document.createElement("div");
@@ -97,6 +135,7 @@ function readPersistedAutoReadReplies(): boolean | null {
 
 describe("AutoReadRepliesToggle", () => {
   afterEach(async () => {
+    restoreSpeechSynthesisMocks();
     localStorage.clear();
     document.body.innerHTML = "";
     await __resetClientSettingsPersistenceForTests();
@@ -141,6 +180,23 @@ describe("AutoReadRepliesToggle", () => {
       await expect
         .element(page.getByLabelText("Auto-read replies"))
         .toHaveAttribute("aria-pressed", "true");
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("speaks a test phrase from the header button", async () => {
+    installSpeechSynthesisMocks();
+
+    const mounted = await mountChatHeader();
+
+    try {
+      await page.getByLabelText("Speak test phrase").click();
+
+      await vi.waitFor(() => {
+        expect(speakSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(speakSpy.mock.calls[0]?.[0]).toMatchObject({ text: "Speech test." });
     } finally {
       await mounted.cleanup();
     }
