@@ -403,7 +403,10 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Diff whitespace changes"]
         : []),
       ...(settings.autoOpenPlanSidebar !== DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar
-        ? ["Auto-open task panel"]
+        ? ["Task sidebar"]
+        : []),
+      ...(settings.autoReadReplies !== DEFAULT_UNIFIED_SETTINGS.autoReadReplies
+        ? ["Auto-read replies"]
         : []),
       ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
         ? ["Assistant output"]
@@ -433,6 +436,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.confirmThreadDelete,
       settings.addProjectBaseDirectory,
       settings.defaultThreadEnvMode,
+      settings.autoReadReplies,
       settings.diffIgnoreWhitespace,
       settings.diffWordWrap,
       settings.automaticGitFetchInterval,
