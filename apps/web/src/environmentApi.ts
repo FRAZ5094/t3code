@@ -32,7 +32,6 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
       preparePullRequestThread: rpcClient.git.preparePullRequestThread,
     },
     orchestration: {
-      getSnapshot: rpcClient.orchestration.getSnapshot,
       dispatchCommand: rpcClient.orchestration.dispatchCommand,
       getTurnDiff: rpcClient.orchestration.getTurnDiff,
       getFullThreadDiff: rpcClient.orchestration.getFullThreadDiff,
@@ -40,12 +39,6 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
         rpcClient.orchestration.subscribeShell(callback, options),
       subscribeThread: (input, callback, options) =>
         rpcClient.orchestration.subscribeThread(input, callback, options),
-      replayEvents: (fromSequenceExclusive) =>
-        rpcClient.orchestration
-          .replayEvents({ fromSequenceExclusive })
-          .then((events) => [...events]),
-      onDomainEvent: (callback, options) =>
-        rpcClient.orchestration.onDomainEvent(callback, options),
     },
   };
 }

@@ -110,14 +110,11 @@ export interface WsRpcClient {
     readonly subscribeAuthAccess: RpcStreamMethod<typeof WS_METHODS.subscribeAuthAccess>;
   };
   readonly orchestration: {
-    readonly getSnapshot: RpcUnaryNoArgMethod<typeof ORCHESTRATION_WS_METHODS.getSnapshot>;
     readonly dispatchCommand: RpcUnaryMethod<typeof ORCHESTRATION_WS_METHODS.dispatchCommand>;
     readonly getTurnDiff: RpcUnaryMethod<typeof ORCHESTRATION_WS_METHODS.getTurnDiff>;
     readonly getFullThreadDiff: RpcUnaryMethod<typeof ORCHESTRATION_WS_METHODS.getFullThreadDiff>;
-    readonly replayEvents: RpcUnaryMethod<typeof ORCHESTRATION_WS_METHODS.replayEvents>;
     readonly subscribeShell: RpcStreamMethod<typeof ORCHESTRATION_WS_METHODS.subscribeShell>;
     readonly subscribeThread: RpcInputStreamMethod<typeof ORCHESTRATION_WS_METHODS.subscribeThread>;
-    readonly onDomainEvent: RpcStreamMethod<typeof WS_METHODS.subscribeOrchestrationDomainEvents>;
   };
 }
 
@@ -230,18 +227,12 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
         ),
     },
     orchestration: {
-      getSnapshot: () =>
-        transport.request((client) => client[ORCHESTRATION_WS_METHODS.getSnapshot]({})),
       dispatchCommand: (input) =>
         transport.request((client) => client[ORCHESTRATION_WS_METHODS.dispatchCommand](input)),
       getTurnDiff: (input) =>
         transport.request((client) => client[ORCHESTRATION_WS_METHODS.getTurnDiff](input)),
       getFullThreadDiff: (input) =>
         transport.request((client) => client[ORCHESTRATION_WS_METHODS.getFullThreadDiff](input)),
-      replayEvents: (input) =>
-        transport
-          .request((client) => client[ORCHESTRATION_WS_METHODS.replayEvents](input))
-          .then((events) => [...events]),
       subscribeShell: (listener, options) =>
         transport.subscribe(
           (client) => client[ORCHESTRATION_WS_METHODS.subscribeShell]({}),
@@ -251,12 +242,6 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
       subscribeThread: (input, listener, options) =>
         transport.subscribe(
           (client) => client[ORCHESTRATION_WS_METHODS.subscribeThread](input),
-          listener,
-          options,
-        ),
-      onDomainEvent: (listener, options) =>
-        transport.subscribe(
-          (client) => client[WS_METHODS.subscribeOrchestrationDomainEvents]({}),
           listener,
           options,
         ),

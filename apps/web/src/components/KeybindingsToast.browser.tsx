@@ -226,9 +226,6 @@ function buildFixture(): TestFixture {
 }
 
 function resolveWsRpc(tag: string): unknown {
-  if (tag === ORCHESTRATION_WS_METHODS.getSnapshot) {
-    return fixture.snapshot;
-  }
   if (tag === WS_METHODS.serverGetConfig) {
     return fixture.serverConfig;
   }

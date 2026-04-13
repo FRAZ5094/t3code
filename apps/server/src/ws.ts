@@ -63,6 +63,26 @@ import {
 } from "./auth/Services/SessionCredentialService";
 import { respondToAuthError } from "./auth/http";
 
+function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
+  OrchestrationEvent,
+  {
+    type:
+      | "thread.message-sent"
+      | "thread.proposed-plan-upserted"
+      | "thread.activity-appended"
+      | "thread.turn-diff-completed"
+      | "thread.reverted";
+  }
+> {
+  return (
+    event.type === "thread.message-sent" ||
+    event.type === "thread.proposed-plan-upserted" ||
+    event.type === "thread.activity-appended" ||
+    event.type === "thread.turn-diff-completed" ||
+    event.type === "thread.reverted"
+  );
+}
+
 function toAuthAccessStreamEvent(
   change: BootstrapCredentialChange | SessionCredentialChange,
   revision: number,
@@ -273,25 +293,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               );
         }
       };
-
-      const isThreadDetailEvent = (
-        event: OrchestrationEvent,
-      ): event is Extract<
-        OrchestrationEvent,
-        {
-          type:
-            | "thread.message-sent"
-            | "thread.proposed-plan-upserted"
-            | "thread.activity-appended"
-            | "thread.turn-diff-completed"
-            | "thread.reverted";
-        }
-      > =>
-        event.type === "thread.message-sent" ||
-        event.type === "thread.proposed-plan-upserted" ||
-        event.type === "thread.activity-appended" ||
-        event.type === "thread.turn-diff-completed" ||
-        event.type === "thread.reverted";
 
       const dispatchBootstrapTurnStart = (
         command: Extract<OrchestrationCommand, { type: "thread.turn.start" }>,
@@ -538,20 +539,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
       return WsRpcGroup.of({
-        [ORCHESTRATION_WS_METHODS.getSnapshot]: (_input) =>
-          observeRpcEffect(
-            ORCHESTRATION_WS_METHODS.getSnapshot,
-            projectionSnapshotQuery.getSnapshot().pipe(
-              Effect.mapError(
-                (cause) =>
-                  new OrchestrationGetSnapshotError({
-                    message: "Failed to load orchestration snapshot",
-                    cause,
-                  }),
-              ),
-            ),
-            { "rpc.aggregate": "orchestration" },
-          ),
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.dispatchCommand,
@@ -711,69 +698,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   },
                 }),
                 liveStream,
-              );
-            }),
-            { "rpc.aggregate": "orchestration" },
-          ),
-        [WS_METHODS.subscribeOrchestrationDomainEvents]: (_input) =>
-          observeRpcStreamEffect(
-            WS_METHODS.subscribeOrchestrationDomainEvents,
-            Effect.gen(function* () {
-              const snapshot = yield* orchestrationEngine.getReadModel();
-              const fromSequenceExclusive = snapshot.snapshotSequence;
-              const replayEvents: Array<OrchestrationEvent> = yield* Stream.runCollect(
-                orchestrationEngine.readEvents(fromSequenceExclusive),
-              ).pipe(
-                Effect.map((events) => Array.from(events)),
-                Effect.flatMap(enrichOrchestrationEvents),
-                Effect.catch(() => Effect.succeed([] as Array<OrchestrationEvent>)),
-              );
-              const replayStream = Stream.fromIterable(replayEvents);
-              const liveStream = orchestrationEngine.streamDomainEvents.pipe(
-                Stream.mapEffect(enrichProjectEvent),
-              );
-              const source = Stream.merge(replayStream, liveStream);
-              type SequenceState = {
-                readonly nextSequence: number;
-                readonly pendingBySequence: Map<number, OrchestrationEvent>;
-              };
-              const state = yield* Ref.make<SequenceState>({
-                nextSequence: fromSequenceExclusive + 1,
-                pendingBySequence: new Map<number, OrchestrationEvent>(),
-              });
-
-              return source.pipe(
-                Stream.mapEffect((event) =>
-                  Ref.modify(
-                    state,
-                    ({
-                      nextSequence,
-                      pendingBySequence,
-                    }): [Array<OrchestrationEvent>, SequenceState] => {
-                      if (event.sequence < nextSequence || pendingBySequence.has(event.sequence)) {
-                        return [[], { nextSequence, pendingBySequence }];
-                      }
-
-                      const updatedPending = new Map(pendingBySequence);
-                      updatedPending.set(event.sequence, event);
-
-                      const emit: Array<OrchestrationEvent> = [];
-                      let expected = nextSequence;
-                      for (;;) {
-                        const expectedEvent = updatedPending.get(expected);
-                        if (!expectedEvent) {
-                          break;
-                        }
-                        emit.push(expectedEvent);
-                        updatedPending.delete(expected);
-                        expected += 1;
-                      }
-
-                      return [emit, { nextSequence: expected, pendingBySequence: updatedPending }];
-                    },
-                  ),
-                ),
-                Stream.flatMap((events) => Stream.fromIterable(events)),
               );
             }),
             { "rpc.aggregate": "orchestration" },

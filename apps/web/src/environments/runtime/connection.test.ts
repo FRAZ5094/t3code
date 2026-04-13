@@ -37,11 +37,9 @@ function createTestClient() {
       updateSettings: vi.fn(async () => undefined),
     },
     orchestration: {
-      getSnapshot: vi.fn(async () => undefined),
       dispatchCommand: vi.fn(async () => undefined),
       getTurnDiff: vi.fn(async () => undefined),
       getFullThreadDiff: vi.fn(async () => undefined),
-      replayEvents: vi.fn(async () => []),
       subscribeShell: vi.fn(
         (listener: (event: any) => void, options?: { onResubscribe?: () => void }) => {
           shellListeners.add(listener);
@@ -66,7 +64,6 @@ function createTestClient() {
         },
       ),
       subscribeThread: vi.fn(() => () => undefined),
-      onDomainEvent: vi.fn(() => () => undefined),
     },
     terminal: {
       open: vi.fn(async () => undefined),

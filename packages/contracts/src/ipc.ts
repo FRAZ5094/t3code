@@ -46,8 +46,6 @@ import type {
   OrchestrationGetFullThreadDiffResult,
   OrchestrationGetTurnDiffInput,
   OrchestrationGetTurnDiffResult,
-  OrchestrationEvent,
-  OrchestrationReadModel,
   OrchestrationShellStreamItem,
   OrchestrationSubscribeThreadInput,
   OrchestrationThreadStreamItem,
@@ -252,13 +250,11 @@ export interface EnvironmentApi {
     ) => () => void;
   };
   orchestration: {
-    getSnapshot: () => Promise<OrchestrationReadModel>;
     dispatchCommand: (command: ClientOrchestrationCommand) => Promise<{ sequence: number }>;
     getTurnDiff: (input: OrchestrationGetTurnDiffInput) => Promise<OrchestrationGetTurnDiffResult>;
     getFullThreadDiff: (
       input: OrchestrationGetFullThreadDiffInput,
     ) => Promise<OrchestrationGetFullThreadDiffResult>;
-    replayEvents: (fromSequenceExclusive: number) => Promise<OrchestrationEvent[]>;
     subscribeShell: (
       callback: (event: OrchestrationShellStreamItem) => void,
       options?: {
@@ -268,12 +264,6 @@ export interface EnvironmentApi {
     subscribeThread: (
       input: OrchestrationSubscribeThreadInput,
       callback: (event: OrchestrationThreadStreamItem) => void,
-      options?: {
-        onResubscribe?: () => void;
-      },
-    ) => () => void;
-    onDomainEvent: (
-      callback: (event: OrchestrationEvent) => void,
       options?: {
         onResubscribe?: () => void;
       },
