@@ -176,6 +176,7 @@ function toShellSnapshot(snapshot: OrchestrationReadModel) {
       id: project.id,
       title: project.title,
       workspaceRoot: project.workspaceRoot,
+      repositoryIdentity: project.repositoryIdentity ?? null,
       defaultModelSelection: project.defaultModelSelection,
       scripts: project.scripts,
       createdAt: project.createdAt,
