@@ -155,7 +155,6 @@ export function createEnvironmentConnection(
     client: input.client,
     ensureBootstrapped: () => bootstrapGate.wait(),
     reconnect: async () => {
-      bootstrapGate.reset();
       try {
         await input.client.reconnect();
         await input.refreshMetadata?.();
