@@ -716,4 +716,166 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       }
     }),
   );
+
+  it.effect("keeps thread detail activity ordering consistent with shell snapshot ordering", () =>
+    Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+
+      yield* sql`DELETE FROM projection_projects`;
+      yield* sql`DELETE FROM projection_threads`;
+      yield* sql`DELETE FROM projection_thread_activities`;
+      yield* sql`DELETE FROM projection_state`;
+
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id,
+          title,
+          workspace_root,
+          default_model_selection_json,
+          scripts_json,
+          created_at,
+          updated_at,
+          deleted_at
+        )
+        VALUES (
+          'project-1',
+          'Project 1',
+          '/tmp/project-1',
+          '{"provider":"codex","model":"gpt-5-codex"}',
+          '[]',
+          '2026-04-01T00:00:00.000Z',
+          '2026-04-01T00:00:01.000Z',
+          NULL
+        )
+      `;
+
+      yield* sql`
+        INSERT INTO projection_threads (
+          thread_id,
+          project_id,
+          title,
+          model_selection_json,
+          runtime_mode,
+          interaction_mode,
+          branch,
+          worktree_path,
+          latest_turn_id,
+          latest_user_message_at,
+          pending_approval_count,
+          pending_user_input_count,
+          has_actionable_proposed_plan,
+          created_at,
+          updated_at,
+          deleted_at
+        )
+        VALUES (
+          'thread-1',
+          'project-1',
+          'Thread 1',
+          '{"provider":"codex","model":"gpt-5-codex"}',
+          'full-access',
+          'default',
+          NULL,
+          NULL,
+          NULL,
+          NULL,
+          0,
+          0,
+          0,
+          '2026-04-01T00:00:02.000Z',
+          '2026-04-01T00:00:03.000Z',
+          NULL
+        )
+      `;
+
+      yield* sql`
+        INSERT INTO projection_thread_activities (
+          activity_id,
+          thread_id,
+          turn_id,
+          tone,
+          kind,
+          summary,
+          payload_json,
+          sequence,
+          created_at
+        )
+        VALUES
+          (
+            'activity-unsequenced',
+            'thread-1',
+            NULL,
+            'info',
+            'runtime.note',
+            'unsequenced first',
+            '{"source":"unsequenced"}',
+            NULL,
+            '2026-04-01T00:00:06.000Z'
+          ),
+          (
+            'activity-sequence-2',
+            'thread-1',
+            NULL,
+            'info',
+            'runtime.note',
+            'sequence two',
+            '{"source":"sequence-2"}',
+            2,
+            '2026-04-01T00:00:04.000Z'
+          ),
+          (
+            'activity-sequence-1',
+            'thread-1',
+            NULL,
+            'info',
+            'runtime.note',
+            'sequence one',
+            '{"source":"sequence-1"}',
+            1,
+            '2026-04-01T00:00:05.000Z'
+          )
+      `;
+
+      const snapshot = yield* snapshotQuery.getSnapshot();
+      const threadDetail = yield* snapshotQuery.getThreadDetailById(ThreadId.make("thread-1"));
+
+      assert.equal(threadDetail._tag, "Some");
+      if (threadDetail._tag === "Some") {
+        assert.deepEqual(threadDetail.value.activities, snapshot.threads[0]?.activities ?? []);
+      }
+
+      assert.deepEqual(snapshot.threads[0]?.activities ?? [], [
+        {
+          id: asEventId("activity-unsequenced"),
+          tone: "info",
+          kind: "runtime.note",
+          summary: "unsequenced first",
+          payload: { source: "unsequenced" },
+          turnId: null,
+          createdAt: "2026-04-01T00:00:06.000Z",
+        },
+        {
+          id: asEventId("activity-sequence-1"),
+          tone: "info",
+          kind: "runtime.note",
+          summary: "sequence one",
+          payload: { source: "sequence-1" },
+          turnId: null,
+          sequence: 1,
+          createdAt: "2026-04-01T00:00:05.000Z",
+        },
+        {
+          id: asEventId("activity-sequence-2"),
+          tone: "info",
+          kind: "runtime.note",
+          summary: "sequence two",
+          payload: { source: "sequence-2" },
+          turnId: null,
+          sequence: 2,
+          createdAt: "2026-04-01T00:00:04.000Z",
+        },
+      ]);
+    }),
+  );
 });
