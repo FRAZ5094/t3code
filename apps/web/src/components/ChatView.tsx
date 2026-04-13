@@ -168,6 +168,7 @@ import {
   useServerKeybindings,
 } from "~/rpc/serverState";
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
+import { applyEnvironmentThreadDetailEvent } from "../environments/runtime/service";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
@@ -842,6 +843,23 @@ export default function ChatView(props: ChatViewProps) {
   const activeProject = useStore(
     useMemo(() => createProjectSelectorByRef(activeProjectRef), [activeProjectRef]),
   );
+
+  useEffect(() => {
+    if (routeKind !== "server") {
+      return;
+    }
+    const api = readEnvironmentApi(environmentId);
+    if (!api) {
+      return;
+    }
+    return api.orchestration.subscribeThread({ threadId }, (item) => {
+      if (item.kind === "snapshot") {
+        useStore.getState().syncServerThreadDetail(item.snapshot.thread, environmentId);
+        return;
+      }
+      applyEnvironmentThreadDetailEvent(item.event, environmentId);
+    });
+  }, [environmentId, routeKind, threadId]);
 
   // Compute the list of environments this logical project spans, used to
   // drive the environment picker in BranchToolbar.

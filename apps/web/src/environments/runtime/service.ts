@@ -2,7 +2,8 @@ import {
   type AuthSessionRole,
   type EnvironmentId,
   type OrchestrationEvent,
-  type OrchestrationReadModel,
+  type OrchestrationShellSnapshot,
+  type OrchestrationShellStreamEvent,
   type ServerConfig,
   type TerminalEvent,
   ThreadId,
@@ -169,17 +170,18 @@ function coalesceOrchestrationUiEvents(
   return coalesced;
 }
 
-function reconcileSnapshotDerivedState() {
-  const storeState = useStore.getState();
-  const threads = selectThreadsAcrossEnvironments(storeState);
-  const projects = selectProjectsAcrossEnvironments(storeState);
-
+function syncProjectUiFromStore() {
+  const projects = selectProjectsAcrossEnvironments(useStore.getState());
   useUiStateStore.getState().syncProjects(
     projects.map((project) => ({
       key: scopedProjectKey(scopeProjectRef(project.environmentId, project.id)),
       cwd: project.cwd,
     })),
   );
+}
+
+function syncThreadUiFromStore() {
+  const threads = selectThreadsAcrossEnvironments(useStore.getState());
   useUiStateStore.getState().syncThreads(
     threads.map((thread) => ({
       key: scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
@@ -189,7 +191,13 @@ function reconcileSnapshotDerivedState() {
   markPromotedDraftThreadsByRef(
     threads.map((thread) => scopeThreadRef(thread.environmentId, thread.id)),
   );
+}
 
+function reconcileSnapshotDerivedState() {
+  syncProjectUiFromStore();
+  syncThreadUiFromStore();
+
+  const threads = selectThreadsAcrossEnvironments(useStore.getState());
   const activeThreadKeys = collectActiveTerminalThreadIds({
     snapshotThreads: threads.map((thread) => ({
       key: scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
@@ -273,11 +281,55 @@ function applyRecoveredEventBatch(
   }
 }
 
+export function applyEnvironmentThreadDetailEvent(
+  event: OrchestrationEvent,
+  environmentId: EnvironmentId,
+) {
+  applyRecoveredEventBatch([event], environmentId);
+}
+
+function applyShellEvent(event: OrchestrationShellStreamEvent, environmentId: EnvironmentId) {
+  const threadId =
+    event.kind === "thread-upserted"
+      ? event.thread.id
+      : event.kind === "thread-removed"
+        ? event.threadId
+        : null;
+  const threadRef = threadId ? scopeThreadRef(environmentId, threadId) : null;
+  const previousThread = threadRef ? selectThreadByRef(useStore.getState(), threadRef) : undefined;
+
+  useStore.getState().applyShellEvent(event, environmentId);
+
+  switch (event.kind) {
+    case "project-upserted":
+    case "project-removed":
+      syncProjectUiFromStore();
+      return;
+    case "thread-upserted":
+      syncThreadUiFromStore();
+      if (!previousThread && threadRef) {
+        markPromotedDraftThreadByRef(threadRef);
+      }
+      if (previousThread?.archivedAt === null && event.thread.archivedAt !== null && threadRef) {
+        useTerminalStateStore.getState().removeTerminalState(threadRef);
+      }
+      return;
+    case "thread-removed":
+      if (threadRef) {
+        useComposerDraftStore.getState().clearDraftThread(threadRef);
+        useUiStateStore.getState().clearThreadUi(scopedThreadKey(threadRef));
+        useTerminalStateStore.getState().removeTerminalState(threadRef);
+      }
+      syncThreadUiFromStore();
+      return;
+  }
+}
+
 function createEnvironmentConnectionHandlers() {
   return {
-    applyEventBatch: applyRecoveredEventBatch,
-    syncSnapshot: (snapshot: OrchestrationReadModel, environmentId: EnvironmentId) => {
-      useStore.getState().syncServerReadModel(snapshot, environmentId);
+    applyShellEvent,
+    syncShellSnapshot: (snapshot: OrchestrationShellSnapshot, environmentId: EnvironmentId) => {
+      useStore.getState().syncServerShellSnapshot(snapshot, environmentId);
       reconcileSnapshotDerivedState();
     },
     applyTerminalEvent: (event: TerminalEvent, environmentId: EnvironmentId) => {

@@ -62,9 +62,15 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           project_id,
           title,
           model_selection_json,
+          runtime_mode,
+          interaction_mode,
           branch,
           worktree_path,
           latest_turn_id,
+          latest_user_message_at,
+          pending_approval_count,
+          pending_user_input_count,
+          has_actionable_proposed_plan,
           created_at,
           updated_at,
           deleted_at
@@ -74,9 +80,15 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           'project-1',
           'Thread 1',
           '{"provider":"codex","model":"gpt-5-codex"}',
+          'full-access',
+          'default',
           NULL,
           NULL,
           'turn-1',
+          '2026-02-24T00:00:04.000Z',
+          1,
+          0,
+          0,
           '2026-02-24T00:00:02.000Z',
           '2026-02-24T00:00:03.000Z',
           NULL
@@ -341,6 +353,81 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           },
         },
       ]);
+
+      const shellSnapshot = yield* snapshotQuery.getShellSnapshot();
+      assert.equal(shellSnapshot.snapshotSequence, 5);
+      assert.deepEqual(shellSnapshot.projects, [
+        {
+          id: asProjectId("project-1"),
+          title: "Project 1",
+          workspaceRoot: "/tmp/project-1",
+          repositoryIdentity: null,
+          defaultModelSelection: {
+            provider: "codex",
+            model: "gpt-5-codex",
+          },
+          scripts: [
+            {
+              id: "script-1",
+              name: "Build",
+              command: "bun run build",
+              icon: "build",
+              runOnWorktreeCreate: false,
+            },
+          ],
+          createdAt: "2026-02-24T00:00:00.000Z",
+          updatedAt: "2026-02-24T00:00:01.000Z",
+        },
+      ]);
+      assert.deepEqual(shellSnapshot.threads, [
+        {
+          id: ThreadId.make("thread-1"),
+          projectId: asProjectId("project-1"),
+          title: "Thread 1",
+          modelSelection: {
+            provider: "codex",
+            model: "gpt-5-codex",
+          },
+          interactionMode: "default",
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
+          latestTurn: {
+            turnId: asTurnId("turn-1"),
+            state: "completed",
+            requestedAt: "2026-02-24T00:00:08.000Z",
+            startedAt: "2026-02-24T00:00:08.000Z",
+            completedAt: "2026-02-24T00:00:08.000Z",
+            assistantMessageId: asMessageId("message-1"),
+            sourceProposedPlan: {
+              threadId: ThreadId.make("thread-1"),
+              planId: "plan-1",
+            },
+          },
+          createdAt: "2026-02-24T00:00:02.000Z",
+          updatedAt: "2026-02-24T00:00:03.000Z",
+          archivedAt: null,
+          session: {
+            threadId: ThreadId.make("thread-1"),
+            status: "running",
+            providerName: "codex",
+            runtimeMode: "approval-required",
+            activeTurnId: asTurnId("turn-1"),
+            lastError: null,
+            updatedAt: "2026-02-24T00:00:07.000Z",
+          },
+          latestUserMessageAt: "2026-02-24T00:00:04.000Z",
+          hasPendingApprovals: true,
+          hasPendingUserInput: false,
+          hasActionableProposedPlan: false,
+        },
+      ]);
+
+      const threadDetail = yield* snapshotQuery.getThreadDetailById(ThreadId.make("thread-1"));
+      assert.equal(threadDetail._tag, "Some");
+      if (threadDetail._tag === "Some") {
+        assert.deepEqual(threadDetail.value, snapshot.threads[0]);
+      }
     }),
   );
 
