@@ -25,6 +25,20 @@ function hasSpeechSynthesisSupport(): boolean {
   );
 }
 
+function attachUtteranceSettledHandlers(
+  utterance: SpeechSynthesisUtterance,
+  onSettled: () => void,
+): void {
+  if (typeof utterance.addEventListener === "function") {
+    utterance.addEventListener("end", onSettled, { once: true });
+    utterance.addEventListener("error", onSettled, { once: true });
+    return;
+  }
+
+  utterance.onend = onSettled;
+  utterance.onerror = onSettled;
+}
+
 export function AutoReadRepliesController({
   enabled,
   threadId,
@@ -116,8 +130,7 @@ export function AutoReadRepliesController({
     const handleSettled = () => {
       handleUtteranceSettled(messageId, nextChunk, speechGeneration);
     };
-    utterance.addEventListener("end", handleSettled, { once: true });
-    utterance.addEventListener("error", handleSettled, { once: true });
+    attachUtteranceSettledHandlers(utterance, handleSettled);
     window.speechSynthesis.speak(utterance);
   });
 
