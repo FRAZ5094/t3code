@@ -35,6 +35,7 @@
     "start:marketing": "turbo run preview --filter=@t3tools/marketing",
     "start:mock-update-server": "bun run scripts/mock-update-server.ts",
     "build": "turbo run build",
+    "build:start:web": "bun run --cwd apps/web build && bun run --cwd apps/server build && node apps/server/dist/bin.mjs --host 0.0.0.0 --no-browser",
     "build:marketing": "turbo run build --filter=@t3tools/marketing",
     "build:desktop": "turbo run build --filter=@t3tools/desktop --filter=t3",
     "typecheck": "turbo run typecheck",
