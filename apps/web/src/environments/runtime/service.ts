@@ -105,17 +105,22 @@ function clearThreadDetailSubscriptionEviction(
 }
 
 function attachThreadDetailSubscription(entry: ThreadDetailSubscriptionEntry): boolean {
-  if (entry.unsubscribeConnectionListener !== null) {
-    entry.unsubscribeConnectionListener();
-    entry.unsubscribeConnectionListener = null;
-  }
   if (entry.unsubscribe !== NOOP) {
+    if (entry.unsubscribeConnectionListener !== null) {
+      entry.unsubscribeConnectionListener();
+      entry.unsubscribeConnectionListener = null;
+    }
     return true;
   }
 
   const connection = readEnvironmentConnection(entry.environmentId);
   if (!connection) {
     return false;
+  }
+
+  if (entry.unsubscribeConnectionListener !== null) {
+    entry.unsubscribeConnectionListener();
+    entry.unsubscribeConnectionListener = null;
   }
 
   entry.unsubscribe = connection.client.orchestration.subscribeThread(
