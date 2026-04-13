@@ -178,26 +178,9 @@ function mapTurnDiffSummary(checkpoint: OrchestrationCheckpointSummary): TurnDif
 }
 
 function mapProject(
-  project: OrchestrationReadModel["projects"][number],
-  environmentId: EnvironmentId,
-): Project {
-  return {
-    id: project.id,
-    environmentId,
-    name: project.title,
-    cwd: project.workspaceRoot,
-    repositoryIdentity: project.repositoryIdentity ?? null,
-    defaultModelSelection: project.defaultModelSelection
-      ? normalizeModelSelection(project.defaultModelSelection)
-      : null,
-    createdAt: project.createdAt,
-    updatedAt: project.updatedAt,
-    scripts: mapProjectScripts(project.scripts),
-  };
-}
-
-function mapProjectShell(
-  project: OrchestrationShellSnapshot["projects"][number],
+  project:
+    | OrchestrationReadModel["projects"][number]
+    | OrchestrationShellSnapshot["projects"][number],
   environmentId: EnvironmentId,
 ): Project {
   return {
@@ -269,6 +252,7 @@ function mapThreadShell(
   const session = thread.session ? mapSession(thread.session) : null;
   const turnState: ThreadTurnState = {
     latestTurn: thread.latestTurn,
+    pendingSourceProposedPlan: thread.latestTurn?.sourceProposedPlan,
   };
   const summary: SidebarThreadSummary = {
     id: thread.id,
@@ -1156,7 +1140,7 @@ function syncEnvironmentShellSnapshot(
   snapshot: OrchestrationShellSnapshot,
   environmentId: EnvironmentId,
 ): EnvironmentState {
-  const nextProjects = snapshot.projects.map((project) => mapProjectShell(project, environmentId));
+  const nextProjects = snapshot.projects.map((project) => mapProject(project, environmentId));
   const nextThreadIds = new Set(snapshot.threads.map((thread) => thread.id));
   let nextState: EnvironmentState = {
     ...state,
@@ -1734,7 +1718,7 @@ function applyEnvironmentShellEvent(
 ): EnvironmentState {
   switch (event.kind) {
     case "project-upserted": {
-      const nextProject = mapProjectShell(event.project, environmentId);
+      const nextProject = mapProject(event.project, environmentId);
       const existingProjectId =
         state.projectIds.find(
           (projectId) =>
