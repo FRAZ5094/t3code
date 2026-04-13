@@ -57,6 +57,7 @@ import {
 import { configureClientTracing } from "../observability/clientTracing";
 import {
   ensurePrimaryEnvironmentReady,
+  fetchPrimaryServerConfig,
   getPrimaryKnownEnvironment,
   resolveInitialServerAuthGateState,
   updatePrimaryEnvironmentDescriptor,
@@ -254,7 +255,9 @@ function ServerStateBootstrap() {
       return;
     }
 
-    return startServerStateSync(getPrimaryEnvironmentConnection().client.server);
+    return startServerStateSync(getPrimaryEnvironmentConnection().client.server, {
+      loadInitialConfig: fetchPrimaryServerConfig,
+    });
   }, []);
 
   return null;

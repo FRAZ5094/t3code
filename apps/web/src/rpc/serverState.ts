@@ -30,6 +30,10 @@ type ServerStateClient = Pick<
   "getConfig" | "subscribeConfig" | "subscribeLifecycle"
 >;
 
+interface StartServerStateSyncOptions {
+  readonly loadInitialConfig?: () => Promise<ServerConfig>;
+}
+
 function makeStateAtom<A>(label: string, initialValue: A) {
   return Atom.make(initialValue).pipe(Atom.keepAlive, Atom.withLabel(label));
 }
@@ -172,7 +176,10 @@ export function onProvidersUpdated(
   return subscribeLatest(providersUpdatedAtom, listener);
 }
 
-export function startServerStateSync(client: ServerStateClient): () => void {
+export function startServerStateSync(
+  client: ServerStateClient,
+  options?: StartServerStateSyncOptions,
+): () => void {
   let disposed = false;
   const cleanups = [
     client.subscribeLifecycle((event) => {
@@ -186,8 +193,8 @@ export function startServerStateSync(client: ServerStateClient): () => void {
   ];
 
   if (getServerConfig() === null) {
-    void client
-      .getConfig()
+    const loadInitialConfig = options?.loadInitialConfig ?? (() => client.getConfig());
+    void loadInitialConfig()
       .then((config) => {
         if (disposed || getServerConfig() !== null) {
           return;

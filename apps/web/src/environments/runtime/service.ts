@@ -14,6 +14,7 @@ import { type QueryClient } from "@tanstack/react-query";
 import { Throttler } from "@tanstack/react-pacer";
 import {
   createKnownEnvironment,
+  getKnownEnvironmentHttpBaseUrl,
   getKnownEnvironmentWsBaseUrl,
   scopedThreadKey,
   scopeProjectRef,
@@ -30,12 +31,13 @@ import { collectActiveTerminalThreadIds } from "~/lib/terminalStateCleanup";
 import { deriveOrchestrationBatchEffects } from "~/orchestrationEventEffects";
 import { projectQueryKeys } from "~/lib/projectReactQuery";
 import { providerQueryKeys } from "~/lib/providerReactQuery";
-import { getPrimaryKnownEnvironment } from "../primary";
+import { getPrimaryKnownEnvironment, resolvePrimaryEnvironmentHttpUrl } from "../primary";
 import {
   bootstrapRemoteBearerSession,
   fetchRemoteEnvironmentDescriptor,
   fetchRemoteSessionState,
   isRemoteEnvironmentAuthHttpError,
+  resolveWebSocketConnectionUrl,
   resolveRemoteWebSocketConnectionUrl,
 } from "../remote/api";
 import { resolveRemotePairingTarget } from "../remote/target";
@@ -1121,23 +1123,45 @@ function createEnvironmentConnectionHandlers() {
   };
 }
 
+async function fetchPrimaryOrchestrationShellSnapshot(): Promise<OrchestrationShellSnapshot> {
+  const response = await fetch(
+    resolvePrimaryEnvironmentHttpUrl("/api/orchestration/shell-snapshot"),
+    {
+      credentials: "include",
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to load orchestration shell snapshot (${response.status}).`);
+  }
+  return (await response.json()) as OrchestrationShellSnapshot;
+}
+
 function createPrimaryEnvironmentClient(
   knownEnvironment: ReturnType<typeof getPrimaryKnownEnvironment>,
 ) {
+  const httpBaseUrl = getKnownEnvironmentHttpBaseUrl(knownEnvironment);
   const wsBaseUrl = getKnownEnvironmentWsBaseUrl(knownEnvironment);
-  if (!wsBaseUrl) {
+  if (!httpBaseUrl || !wsBaseUrl) {
     throw new Error(
-      `Unable to resolve websocket URL for ${knownEnvironment?.label ?? "primary environment"}.`,
+      `Unable to resolve connection URLs for ${knownEnvironment?.label ?? "primary environment"}.`,
     );
   }
   const connectionLabel = knownEnvironment?.label ?? null;
 
   return createWsRpcClient(
-    new WsTransport(wsBaseUrl, {
-      getConnectionLabel: () => connectionLabel,
-      getVersionMismatchHint: () =>
-        resolveServerConfigVersionMismatch(getServerConfig())?.hint ?? null,
-    }),
+    new WsTransport(
+      () =>
+        resolveWebSocketConnectionUrl({
+          wsBaseUrl,
+          httpBaseUrl,
+          credentials: "include",
+        }),
+      {
+        getConnectionLabel: () => connectionLabel,
+        getVersionMismatchHint: () =>
+          resolveServerConfigVersionMismatch(getServerConfig())?.hint ?? null,
+      },
+    ),
   );
 }
 
@@ -1284,6 +1308,7 @@ function createPrimaryEnvironmentConnection(): EnvironmentConnection {
       kind: "primary",
       knownEnvironment,
       client: createPrimaryEnvironmentClient(knownEnvironment),
+      loadSnapshot: fetchPrimaryOrchestrationShellSnapshot,
       ...createEnvironmentConnectionHandlers(),
     }),
   );
