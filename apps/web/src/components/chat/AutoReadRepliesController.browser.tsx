@@ -242,6 +242,33 @@ describe("AutoReadRepliesController", () => {
     }
   });
 
+  it("speaks a fixed phrase when the user sends a new chat message", async () => {
+    installSpeechSynthesisMocks();
+
+    const mounted = await mountController({
+      enabled: true,
+      threadId: THREAD_ID,
+      messages: [createUserMessage({ id: "user-first", text: "First message." })],
+    });
+
+    try {
+      expect(speakSpy).not.toHaveBeenCalled();
+
+      await mounted.rerender({
+        enabled: true,
+        threadId: THREAD_ID,
+        messages: [createUserMessage({ id: "user-second", text: "Second message." })],
+      });
+
+      await vi.waitFor(() => {
+        expect(speakSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(spokenUtterances[0]?.text).toBe("Message sent.");
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
   it("begins speaking once a live assistant reply reaches a natural boundary", async () => {
     installSpeechSynthesisMocks();
 
