@@ -143,10 +143,16 @@ function deriveHasActionableProposedPlan(input: {
       left.updatedAt.localeCompare(right.updatedAt) || left.planId.localeCompare(right.planId),
   );
 
-  const latestForTurn =
-    input.latestTurnId === null
-      ? null
-      : (sorted.filter((plan) => plan.turnId === input.latestTurnId).at(-1) ?? null);
+  let latestForTurn: ProjectionThreadProposedPlan | null = null;
+  if (input.latestTurnId !== null) {
+    for (let index = sorted.length - 1; index >= 0; index -= 1) {
+      const plan = sorted[index];
+      if (plan?.turnId === input.latestTurnId) {
+        latestForTurn = plan;
+        break;
+      }
+    }
+  }
   if (latestForTurn !== null) {
     return latestForTurn.implementedAt === null;
   }

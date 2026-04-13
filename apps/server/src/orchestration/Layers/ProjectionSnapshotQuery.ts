@@ -1356,16 +1356,21 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         updatedAt: threadRow.value.updatedAt,
         archivedAt: threadRow.value.archivedAt,
         deletedAt: null,
-        messages: messageRows.map((row) => ({
-          id: row.messageId,
-          role: row.role,
-          text: row.text,
-          ...(row.attachments !== null ? { attachments: row.attachments } : {}),
-          turnId: row.turnId,
-          streaming: row.isStreaming === 1,
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt,
-        })),
+        messages: messageRows.map((row) => {
+          const message = {
+            id: row.messageId,
+            role: row.role,
+            text: row.text,
+            turnId: row.turnId,
+            streaming: row.isStreaming === 1,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+          };
+          if (row.attachments !== null) {
+            return Object.assign(message, { attachments: row.attachments });
+          }
+          return message;
+        }),
         proposedPlans: proposedPlanRows.map((row) => ({
           id: row.planId,
           turnId: row.turnId,
@@ -1375,16 +1380,21 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           createdAt: row.createdAt,
           updatedAt: row.updatedAt,
         })),
-        activities: activityRows.map((row) => ({
-          id: row.activityId,
-          tone: row.tone,
-          kind: row.kind,
-          summary: row.summary,
-          payload: row.payload,
-          turnId: row.turnId,
-          ...(row.sequence !== null ? { sequence: row.sequence } : {}),
-          createdAt: row.createdAt,
-        })),
+        activities: activityRows.map((row) => {
+          const activity = {
+            id: row.activityId,
+            tone: row.tone,
+            kind: row.kind,
+            summary: row.summary,
+            payload: row.payload,
+            turnId: row.turnId,
+            createdAt: row.createdAt,
+          };
+          if (row.sequence !== null) {
+            return Object.assign(activity, { sequence: row.sequence });
+          }
+          return activity;
+        }),
         checkpoints: checkpointRows.map((row) => ({
           turnId: row.turnId,
           checkpointTurnCount: row.checkpointTurnCount,
