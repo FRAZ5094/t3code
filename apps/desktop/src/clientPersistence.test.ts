@@ -50,6 +50,7 @@ function makeSecretStorage(available: boolean): DesktopSecretStorage {
 
 const clientSettings: ClientSettings = {
   autoOpenPlanSidebar: false,
+  autoReadReplies: true,
   confirmThreadArchive: true,
   confirmThreadDelete: false,
   diffWordWrap: true,

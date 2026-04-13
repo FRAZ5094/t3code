@@ -474,6 +474,8 @@ export function useSettingsRestore(onRestored?: () => void) {
         : []),
       ...(settings.autoOpenPlanSidebar !== DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar
         ? ["Task sidebar"]
+      ...(settings.autoReadReplies !== DEFAULT_UNIFIED_SETTINGS.autoReadReplies
+        ? ["Auto-read replies"]
         : []),
       ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
         ? ["Assistant output"]
@@ -501,6 +503,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.confirmThreadDelete,
       settings.addProjectBaseDirectory,
       settings.defaultThreadEnvMode,
+      settings.autoReadReplies,
       settings.diffWordWrap,
       settings.enableAssistantStreaming,
       settings.timestampFormat,
