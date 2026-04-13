@@ -3,7 +3,6 @@ import { useEffect, useEffectEvent, useRef } from "react";
 import {
   extractSpeakableChunks,
   findLatestAssistantMessage,
-  findLatestUserMessage,
   type SpeakableChunk,
 } from "~/lib/autoReadReplies";
 import type { ChatMessage } from "../../types";
@@ -45,7 +44,6 @@ export function AutoReadRepliesController({
   threadId,
   messages,
 }: AutoReadRepliesControllerProps) {
-  const observedLatestUserMessageIdRef = useRef<ChatMessage["id"] | null>(null);
   const speechPrimedRef = useRef(false);
   const observedThreadIdRef = useRef<ThreadId | null>(null);
   const observedLatestMessageIdRef = useRef<ChatMessage["id"] | null>(null);
@@ -196,26 +194,9 @@ export function AutoReadRepliesController({
     flushPendingChunks();
   });
 
-  const speakFixedPhrase = useEffectEvent((messageId: ChatMessage["id"], text: string) => {
-    clearTracking(true);
-    activeThreadIdRef.current = threadId;
-    activeMessageIdRef.current = messageId;
-    queuedOffsetRef.current = text.length;
-    spokenOffsetRef.current = 0;
-    completionFlushedRef.current = true;
-    pendingChunksRef.current = [
-      {
-        text,
-        endOffset: text.length,
-      },
-    ];
-    flushPendingChunks();
-  });
-
   useEffect(() => {
     if (!enabled || !threadId) {
       clearTracking(true);
-      observedLatestUserMessageIdRef.current = null;
       observedThreadIdRef.current = threadId;
       observedLatestMessageIdRef.current = null;
       observedMessageCountRef.current = messages.length;
@@ -232,36 +213,16 @@ export function AutoReadRepliesController({
     }
 
     if (observedThreadIdRef.current !== threadId) {
-      observedLatestUserMessageIdRef.current = null;
       observedThreadIdRef.current = threadId;
       observedLatestMessageIdRef.current = null;
       observedMessageCountRef.current = 0;
-    }
-
-    const latestUserMessage = findLatestUserMessage(messages);
-    if (latestUserMessage) {
-      const observedLatestUserMessageId = observedLatestUserMessageIdRef.current;
-      observedLatestUserMessageIdRef.current = latestUserMessage.id;
-
-      if (
-        observedLatestUserMessageId !== null &&
-        observedLatestUserMessageId !== latestUserMessage.id
-      ) {
-        speakFixedPhrase(latestUserMessage.id, "Message sent.");
-        return;
-      }
-    } else {
-      observedLatestUserMessageIdRef.current = null;
     }
 
     const latestAssistantMessage = findLatestAssistantMessage(messages);
     if (!latestAssistantMessage) {
       observedLatestMessageIdRef.current = null;
       observedMessageCountRef.current = messages.length;
-      if (
-        activeMessageIdRef.current !== null &&
-        activeMessageIdRef.current !== observedLatestUserMessageIdRef.current
-      ) {
+      if (activeMessageIdRef.current !== null) {
         clearTracking(true);
       }
       return;
@@ -355,7 +316,6 @@ export function AutoReadRepliesController({
       speechGenerationRef.current += 1;
       activeThreadIdRef.current = null;
       activeMessageIdRef.current = null;
-      observedLatestUserMessageIdRef.current = null;
       observedThreadIdRef.current = null;
       observedLatestMessageIdRef.current = null;
       observedMessageCountRef.current = 0;
