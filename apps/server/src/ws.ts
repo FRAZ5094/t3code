@@ -71,7 +71,8 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
       | "thread.proposed-plan-upserted"
       | "thread.activity-appended"
       | "thread.turn-diff-completed"
-      | "thread.reverted";
+      | "thread.reverted"
+      | "thread.session-set";
   }
 > {
   return (
@@ -79,7 +80,8 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
     event.type === "thread.proposed-plan-upserted" ||
     event.type === "thread.activity-appended" ||
     event.type === "thread.turn-diff-completed" ||
-    event.type === "thread.reverted"
+    event.type === "thread.reverted" ||
+    event.type === "thread.session-set"
   );
 }
 
