@@ -17,6 +17,7 @@ import { Toggle } from "../ui/toggle";
 import { SidebarTrigger } from "../ui/sidebar";
 import { OpenInPicker } from "./OpenInPicker";
 import { AutoReadRepliesToggle } from "./AutoReadRepliesToggle";
+import { SpeechTestButton } from "./SpeechTestButton";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -164,6 +165,7 @@ export const ChatHeader = memo(function ChatHeader({
                 : "Toggle diff panel"}
           </TooltipPopup>
         </Tooltip>
+        <SpeechTestButton />
         <AutoReadRepliesToggle />
       </div>
     </div>
