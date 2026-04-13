@@ -44,6 +44,9 @@ export function AutoReadRepliesController({
   threadId,
   messages,
 }: AutoReadRepliesControllerProps) {
+  const observedThreadIdRef = useRef<ThreadId | null>(null);
+  const observedLatestMessageIdRef = useRef<ChatMessage["id"] | null>(null);
+  const observedMessageCountRef = useRef(0);
   const activeThreadIdRef = useRef<ThreadId | null>(null);
   const activeMessageIdRef = useRef<ChatMessage["id"] | null>(null);
   const queuedOffsetRef = useRef(0);
@@ -165,6 +168,9 @@ export function AutoReadRepliesController({
   useEffect(() => {
     if (!enabled || !threadId) {
       clearTracking(true);
+      observedThreadIdRef.current = threadId;
+      observedLatestMessageIdRef.current = null;
+      observedMessageCountRef.current = messages.length;
       return;
     }
 
@@ -177,8 +183,16 @@ export function AutoReadRepliesController({
       clearTracking(true);
     }
 
+    if (observedThreadIdRef.current !== threadId) {
+      observedThreadIdRef.current = threadId;
+      observedLatestMessageIdRef.current = null;
+      observedMessageCountRef.current = 0;
+    }
+
     const latestAssistantMessage = findLatestAssistantMessage(messages);
     if (!latestAssistantMessage) {
+      observedLatestMessageIdRef.current = null;
+      observedMessageCountRef.current = messages.length;
       if (activeMessageIdRef.current !== null) {
         clearTracking(true);
       }
@@ -187,7 +201,16 @@ export function AutoReadRepliesController({
 
     const trackedMessageId = activeMessageIdRef.current;
     if (trackedMessageId === null) {
-      if (!latestAssistantMessage.streaming) {
+      const previouslyObservedLatestMessageId = observedLatestMessageIdRef.current;
+      const previouslyObservedMessageCount = observedMessageCountRef.current;
+      observedLatestMessageIdRef.current = latestAssistantMessage.id;
+      observedMessageCountRef.current = messages.length;
+
+      if (
+        !latestAssistantMessage.streaming &&
+        previouslyObservedLatestMessageId === null &&
+        previouslyObservedMessageCount === 0
+      ) {
         return;
       }
 
@@ -201,10 +224,9 @@ export function AutoReadRepliesController({
     }
 
     if (trackedMessageId !== latestAssistantMessage.id) {
+      observedLatestMessageIdRef.current = latestAssistantMessage.id;
+      observedMessageCountRef.current = messages.length;
       clearTracking(true);
-      if (!latestAssistantMessage.streaming) {
-        return;
-      }
 
       activeThreadIdRef.current = threadId;
       activeMessageIdRef.current = latestAssistantMessage.id;
@@ -215,6 +237,8 @@ export function AutoReadRepliesController({
       return;
     }
 
+    observedLatestMessageIdRef.current = latestAssistantMessage.id;
+    observedMessageCountRef.current = messages.length;
     activeThreadIdRef.current = threadId;
     enqueueSpeakableChunks(latestAssistantMessage);
   }, [enabled, messages, threadId]);
@@ -227,6 +251,9 @@ export function AutoReadRepliesController({
       speechGenerationRef.current += 1;
       activeThreadIdRef.current = null;
       activeMessageIdRef.current = null;
+      observedThreadIdRef.current = null;
+      observedLatestMessageIdRef.current = null;
+      observedMessageCountRef.current = 0;
       queuedOffsetRef.current = 0;
       spokenOffsetRef.current = 0;
       completionFlushedRef.current = false;

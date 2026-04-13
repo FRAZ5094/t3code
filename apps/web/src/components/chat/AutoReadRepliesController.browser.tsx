@@ -151,6 +151,16 @@ function createAssistantMessage(input: {
   };
 }
 
+function createUserMessage(input: { id: string; text: string }): ChatMessage {
+  return {
+    id: MessageId.make(input.id),
+    role: "user",
+    text: input.text,
+    createdAt: NOW_ISO,
+    streaming: false,
+  };
+}
+
 async function mountController(props: ControllerProps) {
   const host = document.createElement("div");
   document.body.append(host);
@@ -193,6 +203,40 @@ describe("AutoReadRepliesController", () => {
     try {
       expect(speakSpy).not.toHaveBeenCalled();
       expect(cancelSpy).not.toHaveBeenCalled();
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("speaks a newly-arrived assistant reply even if it first appears already completed", async () => {
+    installSpeechSynthesisMocks();
+
+    const mounted = await mountController({
+      enabled: true,
+      threadId: THREAD_ID,
+      messages: [createUserMessage({ id: "user-before-complete", text: "Tell me something." })],
+    });
+
+    try {
+      expect(speakSpy).not.toHaveBeenCalled();
+
+      await mounted.rerender({
+        enabled: true,
+        threadId: THREAD_ID,
+        messages: [
+          createAssistantMessage({
+            id: "message-complete-new",
+            text: "Completed reply.",
+            streaming: false,
+            completedAt: NOW_ISO,
+          }),
+        ],
+      });
+
+      await vi.waitFor(() => {
+        expect(speakSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(spokenUtterances[0]?.text).toBe("Completed reply.");
     } finally {
       await mounted.cleanup();
     }
