@@ -69,11 +69,166 @@ type EnvironmentServiceState = {
   stop: () => void;
 };
 
+type ThreadDetailSubscriptionEntry = {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly unsubscribe: () => void;
+  refCount: number;
+  lastAccessedAt: number;
+  evictionTimeoutId: ReturnType<typeof setTimeout> | null;
+};
+
 const environmentConnections = new Map<EnvironmentId, EnvironmentConnection>();
 const environmentConnectionListeners = new Set<() => void>();
+const threadDetailSubscriptions = new Map<string, ThreadDetailSubscriptionEntry>();
 
 let activeService: EnvironmentServiceState | null = null;
 let needsProviderInvalidation = false;
+
+const THREAD_DETAIL_SUBSCRIPTION_IDLE_EVICTION_MS = 2 * 60 * 1000;
+const MAX_CACHED_THREAD_DETAIL_SUBSCRIPTIONS = 8;
+
+function getThreadDetailSubscriptionKey(environmentId: EnvironmentId, threadId: ThreadId): string {
+  return scopedThreadKey(scopeThreadRef(environmentId, threadId));
+}
+
+function clearThreadDetailSubscriptionEviction(
+  entry: ThreadDetailSubscriptionEntry,
+): ThreadDetailSubscriptionEntry {
+  if (entry.evictionTimeoutId !== null) {
+    clearTimeout(entry.evictionTimeoutId);
+    entry.evictionTimeoutId = null;
+  }
+  return entry;
+}
+
+function disposeThreadDetailSubscriptionByKey(key: string): boolean {
+  const entry = threadDetailSubscriptions.get(key);
+  if (!entry) {
+    return false;
+  }
+
+  clearThreadDetailSubscriptionEviction(entry);
+  threadDetailSubscriptions.delete(key);
+  entry.unsubscribe();
+  return true;
+}
+
+function disposeThreadDetailSubscriptionsForEnvironment(environmentId: EnvironmentId): void {
+  for (const [key, entry] of threadDetailSubscriptions) {
+    if (entry.environmentId === environmentId) {
+      disposeThreadDetailSubscriptionByKey(key);
+    }
+  }
+}
+
+function reconcileThreadDetailSubscriptionsForEnvironment(
+  environmentId: EnvironmentId,
+  threadIds: ReadonlyArray<ThreadId>,
+): void {
+  const activeThreadIds = new Set(threadIds);
+  for (const [key, entry] of threadDetailSubscriptions) {
+    if (entry.environmentId === environmentId && !activeThreadIds.has(entry.threadId)) {
+      disposeThreadDetailSubscriptionByKey(key);
+    }
+  }
+}
+
+function scheduleThreadDetailSubscriptionEviction(entry: ThreadDetailSubscriptionEntry): void {
+  clearThreadDetailSubscriptionEviction(entry);
+  entry.evictionTimeoutId = setTimeout(() => {
+    const currentEntry = threadDetailSubscriptions.get(
+      getThreadDetailSubscriptionKey(entry.environmentId, entry.threadId),
+    );
+    if (!currentEntry || currentEntry.refCount > 0) {
+      return;
+    }
+    disposeThreadDetailSubscriptionByKey(
+      getThreadDetailSubscriptionKey(entry.environmentId, entry.threadId),
+    );
+  }, THREAD_DETAIL_SUBSCRIPTION_IDLE_EVICTION_MS);
+}
+
+function evictIdleThreadDetailSubscriptionsToCapacity(): void {
+  if (threadDetailSubscriptions.size <= MAX_CACHED_THREAD_DETAIL_SUBSCRIPTIONS) {
+    return;
+  }
+
+  const idleEntries = [...threadDetailSubscriptions.entries()]
+    .filter(([, entry]) => entry.refCount === 0)
+    .toSorted(([, left], [, right]) => left.lastAccessedAt - right.lastAccessedAt);
+
+  for (const [key] of idleEntries) {
+    if (threadDetailSubscriptions.size <= MAX_CACHED_THREAD_DETAIL_SUBSCRIPTIONS) {
+      return;
+    }
+    disposeThreadDetailSubscriptionByKey(key);
+  }
+}
+
+export function retainThreadDetailSubscription(
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+): () => void {
+  const key = getThreadDetailSubscriptionKey(environmentId, threadId);
+  const existing = threadDetailSubscriptions.get(key);
+  if (existing) {
+    clearThreadDetailSubscriptionEviction(existing);
+    existing.refCount += 1;
+    existing.lastAccessedAt = Date.now();
+    let released = false;
+    return () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      existing.refCount = Math.max(0, existing.refCount - 1);
+      existing.lastAccessedAt = Date.now();
+      if (existing.refCount === 0) {
+        scheduleThreadDetailSubscriptionEviction(existing);
+        evictIdleThreadDetailSubscriptionsToCapacity();
+      }
+    };
+  }
+
+  const connection = readEnvironmentConnection(environmentId);
+  if (!connection) {
+    return () => undefined;
+  }
+
+  const unsubscribe = connection.client.orchestration.subscribeThread({ threadId }, (item) => {
+    if (item.kind === "snapshot") {
+      useStore.getState().syncServerThreadDetail(item.snapshot.thread, environmentId);
+      return;
+    }
+    applyEnvironmentThreadDetailEvent(item.event, environmentId);
+  });
+
+  const entry: ThreadDetailSubscriptionEntry = {
+    environmentId,
+    threadId,
+    unsubscribe,
+    refCount: 1,
+    lastAccessedAt: Date.now(),
+    evictionTimeoutId: null,
+  };
+  threadDetailSubscriptions.set(key, entry);
+  evictIdleThreadDetailSubscriptionsToCapacity();
+
+  let released = false;
+  return () => {
+    if (released) {
+      return;
+    }
+    released = true;
+    entry.refCount = Math.max(0, entry.refCount - 1);
+    entry.lastAccessedAt = Date.now();
+    if (entry.refCount === 0) {
+      scheduleThreadDetailSubscriptionEviction(entry);
+      evictIdleThreadDetailSubscriptionsToCapacity();
+    }
+  };
+}
 
 function emitEnvironmentConnectionRegistryChange() {
   for (const listener of environmentConnectionListeners) {
@@ -316,6 +471,7 @@ function applyShellEvent(event: OrchestrationShellStreamEvent, environmentId: En
       return;
     case "thread-removed":
       if (threadRef) {
+        disposeThreadDetailSubscriptionByKey(scopedThreadKey(threadRef));
         useComposerDraftStore.getState().clearDraftThread(threadRef);
         useUiStateStore.getState().clearThreadUi(scopedThreadKey(threadRef));
         useTerminalStateStore.getState().removeTerminalState(threadRef);
@@ -330,6 +486,10 @@ function createEnvironmentConnectionHandlers() {
     applyShellEvent,
     syncShellSnapshot: (snapshot: OrchestrationShellSnapshot, environmentId: EnvironmentId) => {
       useStore.getState().syncServerShellSnapshot(snapshot, environmentId);
+      reconcileThreadDetailSubscriptionsForEnvironment(
+        environmentId,
+        snapshot.threads.map((thread) => thread.id),
+      );
       reconcileSnapshotDerivedState();
     },
     applyTerminalEvent: (event: TerminalEvent, environmentId: EnvironmentId) => {
@@ -438,6 +598,7 @@ async function removeConnection(environmentId: EnvironmentId): Promise<boolean> 
     return false;
   }
 
+  disposeThreadDetailSubscriptionsForEnvironment(environmentId);
   environmentConnections.delete(environmentId);
   emitEnvironmentConnectionRegistryChange();
   await connection.dispose();
@@ -766,6 +927,9 @@ export function startEnvironmentConnectionService(queryClient: QueryClient): () 
 
 export async function resetEnvironmentServiceForTests(): Promise<void> {
   stopActiveService();
+  for (const key of Array.from(threadDetailSubscriptions.keys())) {
+    disposeThreadDetailSubscriptionByKey(key);
+  }
   await Promise.all(
     [...environmentConnections.keys()].map((environmentId) => removeConnection(environmentId)),
   );
