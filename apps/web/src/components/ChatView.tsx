@@ -130,6 +130,7 @@ import {
 } from "../lib/terminalContext";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import { AutoReadRepliesController } from "./chat/AutoReadRepliesController";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
@@ -3121,6 +3122,11 @@ export default function ChatView(props: ChatViewProps) {
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
+      <AutoReadRepliesController
+        enabled={settings.autoReadReplies}
+        threadId={activeThread.id}
+        messages={activeThread.messages}
+      />
       {/* Top bar */}
       <header
         className={cn(

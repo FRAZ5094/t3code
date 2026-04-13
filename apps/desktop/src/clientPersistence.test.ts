@@ -49,6 +49,7 @@ function makeSecretStorage(available: boolean): DesktopSecretStorage {
 }
 
 const clientSettings: ClientSettings = {
+  autoReadReplies: true,
   confirmThreadArchive: true,
   confirmThreadDelete: false,
   diffWordWrap: true,

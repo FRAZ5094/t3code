@@ -1,4 +1,8 @@
-import { EnvironmentId, type PersistedSavedEnvironmentRecord } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  type ClientSettings,
+  type PersistedSavedEnvironmentRecord,
+} from "@t3tools/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const testEnvironmentId = EnvironmentId.make("environment-1");
@@ -10,6 +14,16 @@ const savedRegistryRecord: PersistedSavedEnvironmentRecord = {
   wsBaseUrl: "wss://remote.example.com/",
   createdAt: "2026-04-09T00:00:00.000Z",
   lastConnectedAt: null,
+};
+
+const clientSettings: ClientSettings = {
+  autoReadReplies: true,
+  confirmThreadArchive: true,
+  confirmThreadDelete: false,
+  diffWordWrap: true,
+  sidebarProjectSortOrder: "manual",
+  sidebarThreadSortOrder: "created_at",
+  timestampFormat: "24-hour",
 };
 
 function createLocalStorageStub(): Storage {
@@ -49,6 +63,19 @@ afterEach(() => {
 });
 
 describe("clientPersistenceStorage", () => {
+  it("stores browser client settings in localStorage", async () => {
+    const testWindow = getTestWindow();
+    const { CLIENT_SETTINGS_STORAGE_KEY, readBrowserClientSettings, writeBrowserClientSettings } =
+      await import("./clientPersistenceStorage");
+
+    writeBrowserClientSettings(clientSettings);
+
+    expect(readBrowserClientSettings()).toEqual(clientSettings);
+    expect(JSON.parse(testWindow.localStorage.getItem(CLIENT_SETTINGS_STORAGE_KEY)!)).toEqual(
+      clientSettings,
+    );
+  });
+
   it("stores browser secrets inline with the saved environment record", async () => {
     const testWindow = getTestWindow();
     const {

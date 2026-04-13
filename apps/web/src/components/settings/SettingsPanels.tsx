@@ -371,6 +371,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.diffWordWrap !== DEFAULT_UNIFIED_SETTINGS.diffWordWrap
         ? ["Diff line wrapping"]
         : []),
+      ...(settings.autoReadReplies !== DEFAULT_UNIFIED_SETTINGS.autoReadReplies
+        ? ["Auto-read replies"]
+        : []),
       ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
         ? ["Assistant output"]
         : []),
@@ -392,6 +395,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
       settings.defaultThreadEnvMode,
+      settings.autoReadReplies,
       settings.diffWordWrap,
       settings.enableAssistantStreaming,
       settings.timestampFormat,
