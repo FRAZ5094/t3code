@@ -49,6 +49,7 @@ async function fetchRemoteJson<T>(input: {
   readonly pathname: string;
   readonly method?: "GET" | "POST";
   readonly bearerToken?: string;
+  readonly credentials?: RequestCredentials;
   readonly body?: unknown;
 }): Promise<T> {
   const requestUrl = remoteEndpointUrl(input.httpBaseUrl, input.pathname);
@@ -60,6 +61,7 @@ async function fetchRemoteJson<T>(input: {
         ...(input.body !== undefined ? { "content-type": "application/json" } : {}),
         ...(input.bearerToken ? { authorization: `Bearer ${input.bearerToken}` } : {}),
       },
+      ...(input.credentials ? { credentials: input.credentials } : {}),
       ...(input.body !== undefined ? { body: JSON.stringify(input.body) } : {}),
     });
   } catch (error) {
@@ -116,16 +118,41 @@ export async function fetchRemoteEnvironmentDescriptor(input: {
   });
 }
 
-export async function issueRemoteWebSocketToken(input: {
+export async function issueWebSocketToken(input: {
   readonly httpBaseUrl: string;
-  readonly bearerToken: string;
+  readonly bearerToken?: string;
+  readonly credentials?: RequestCredentials;
 }): Promise<AuthWebSocketTokenResult> {
   return fetchRemoteJson<AuthWebSocketTokenResult>({
     httpBaseUrl: input.httpBaseUrl,
     pathname: "/api/auth/ws-token",
     method: "POST",
-    bearerToken: input.bearerToken,
+    ...(input.bearerToken ? { bearerToken: input.bearerToken } : {}),
+    ...(input.credentials ? { credentials: input.credentials } : {}),
   });
+}
+
+export async function resolveWebSocketConnectionUrl(input: {
+  readonly wsBaseUrl: string;
+  readonly httpBaseUrl: string;
+  readonly bearerToken?: string;
+  readonly credentials?: RequestCredentials;
+}): Promise<string> {
+  const issued = await issueWebSocketToken({
+    httpBaseUrl: input.httpBaseUrl,
+    ...(input.bearerToken ? { bearerToken: input.bearerToken } : {}),
+    ...(input.credentials ? { credentials: input.credentials } : {}),
+  });
+  const url = new URL(input.wsBaseUrl, window.location.origin);
+  url.searchParams.set("wsToken", issued.token);
+  return url.toString();
+}
+
+export async function issueRemoteWebSocketToken(input: {
+  readonly httpBaseUrl: string;
+  readonly bearerToken: string;
+}): Promise<AuthWebSocketTokenResult> {
+  return issueWebSocketToken(input);
 }
 
 export async function resolveRemoteWebSocketConnectionUrl(input: {
@@ -133,11 +160,5 @@ export async function resolveRemoteWebSocketConnectionUrl(input: {
   readonly httpBaseUrl: string;
   readonly bearerToken: string;
 }): Promise<string> {
-  const issued = await issueRemoteWebSocketToken({
-    httpBaseUrl: input.httpBaseUrl,
-    bearerToken: input.bearerToken,
-  });
-  const url = new URL(input.wsBaseUrl, window.location.origin);
-  url.searchParams.set("wsToken", issued.token);
-  return url.toString();
+  return resolveWebSocketConnectionUrl(input);
 }

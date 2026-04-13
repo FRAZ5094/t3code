@@ -28,12 +28,11 @@ import { HttpRouter, HttpServerRequest } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
 import { CheckpointDiffQuery } from "./checkpointing/Services/CheckpointDiffQuery.ts";
-import { ServerConfig } from "./config.ts";
 import { GitCore } from "./git/Services/GitCore.ts";
 import { GitManager } from "./git/Services/GitManager.ts";
 import { GitStatusBroadcaster } from "./git/Services/GitStatusBroadcaster.ts";
 import { Keybindings } from "./keybindings.ts";
-import { Open, resolveAvailableEditors } from "./open.ts";
+import { Open } from "./open.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import { OrchestrationEngineService } from "./orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
@@ -52,8 +51,8 @@ import { WorkspaceFileSystem } from "./workspace/Services/WorkspaceFileSystem.ts
 import { WorkspacePathOutsideRootError } from "./workspace/Services/WorkspacePaths.ts";
 import { ProjectSetupScriptRunner } from "./project/Services/ProjectSetupScriptRunner.ts";
 import { RepositoryIdentityResolver } from "./project/Services/RepositoryIdentityResolver.ts";
-import { ServerEnvironment } from "./environment/Services/ServerEnvironment.ts";
 import { ServerAuth } from "./auth/Services/ServerAuth.ts";
+import { loadServerConfigSnapshot } from "./serverConfigSnapshot.ts";
 import {
   BootstrapCredentialService,
   type BootstrapCredentialChange,
@@ -141,7 +140,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const gitStatusBroadcaster = yield* GitStatusBroadcaster;
       const terminalManager = yield* TerminalManager;
       const providerRegistry = yield* ProviderRegistry;
-      const config = yield* ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents;
       const serverSettings = yield* ServerSettingsService;
       const startup = yield* ServerRuntimeStartup;
@@ -149,12 +147,12 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const workspaceFileSystem = yield* WorkspaceFileSystem;
       const projectSetupScriptRunner = yield* ProjectSetupScriptRunner;
       const repositoryIdentityResolver = yield* RepositoryIdentityResolver;
-      const serverEnvironment = yield* ServerEnvironment;
       const serverAuth = yield* ServerAuth;
       const bootstrapCredentials = yield* BootstrapCredentialService;
       const sessions = yield* SessionCredentialService;
       const serverCommandId = (tag: string) =>
         CommandId.make(`server:${tag}:${crypto.randomUUID()}`);
+      const loadServerConfig = loadServerConfigSnapshot.pipe(Effect.orDie);
 
       const loadAuthAccessSnapshot = () =>
         Effect.all({
@@ -508,36 +506,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             ),
           );
       };
-
-      const loadServerConfig = Effect.gen(function* () {
-        const keybindingsConfig = yield* keybindings.loadConfigState;
-        const providers = yield* providerRegistry.getProviders;
-        const settings = yield* serverSettings.getSettings;
-        const environment = yield* serverEnvironment.getDescriptor;
-        const auth = yield* serverAuth.getDescriptor();
-
-        return {
-          environment,
-          auth,
-          cwd: config.cwd,
-          keybindingsConfigPath: config.keybindingsConfigPath,
-          keybindings: keybindingsConfig.keybindings,
-          issues: keybindingsConfig.issues,
-          providers,
-          availableEditors: resolveAvailableEditors(),
-          observability: {
-            logsDirectoryPath: config.logsDir,
-            localTracingEnabled: true,
-            ...(config.otlpTracesUrl !== undefined ? { otlpTracesUrl: config.otlpTracesUrl } : {}),
-            otlpTracesEnabled: config.otlpTracesUrl !== undefined,
-            ...(config.otlpMetricsUrl !== undefined
-              ? { otlpMetricsUrl: config.otlpMetricsUrl }
-              : {}),
-            otlpMetricsEnabled: config.otlpMetricsUrl !== undefined,
-          },
-          settings,
-        };
-      });
 
       const refreshGitStatus = (cwd: string) =>
         gitStatusBroadcaster

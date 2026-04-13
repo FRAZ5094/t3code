@@ -176,6 +176,52 @@ describe("createEnvironmentConnection", () => {
     await connection.dispose();
   });
 
+  it("uses an explicit snapshot loader when provided", async () => {
+    const environmentId = EnvironmentId.make("env-1");
+    const { client, getSnapshot } = createTestClient();
+    const syncSnapshot = vi.fn();
+    const loadSnapshot = vi.fn(
+      async () =>
+        ({
+          snapshotSequence: 2,
+          updatedAt: "2026-04-13T00:00:00.000Z",
+          projects: [],
+          threads: [],
+        }) as any,
+    );
+
+    const connection = createEnvironmentConnection({
+      kind: "primary",
+      knownEnvironment: {
+        id: "env-1",
+        label: "Primary env",
+        source: "window-origin",
+        target: {
+          httpBaseUrl: "http://example.test",
+          wsBaseUrl: "ws://example.test",
+        },
+        environmentId,
+      },
+      client,
+      loadSnapshot,
+      applyEventBatch: vi.fn(),
+      syncSnapshot,
+      applyTerminalEvent: vi.fn(),
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(loadSnapshot).toHaveBeenCalledTimes(1);
+    expect(getSnapshot).not.toHaveBeenCalled();
+    expect(syncSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ snapshotSequence: 2 }),
+      environmentId,
+    );
+
+    await connection.dispose();
+  });
+
   it("rejects welcome/config identity drift", async () => {
     const environmentId = EnvironmentId.make("env-1");
     const { client, emitWelcome } = createTestClient();

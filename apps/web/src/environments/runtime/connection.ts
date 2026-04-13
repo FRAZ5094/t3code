@@ -1,5 +1,6 @@
 import type {
   EnvironmentId,
+  OrchestrationReadModel,
   OrchestrationShellSnapshot,
   OrchestrationShellStreamEvent,
   ServerConfig,
@@ -36,6 +37,7 @@ interface EnvironmentConnectionInput extends OrchestrationHandlers {
   readonly kind: "primary" | "saved";
   readonly knownEnvironment: KnownEnvironment;
   readonly client: WsRpcClient;
+  readonly loadSnapshot?: () => Promise<OrchestrationShellSnapshot | OrchestrationReadModel>;
   readonly refreshMetadata?: () => Promise<void>;
   readonly onConfigSnapshot?: (config: ServerConfig) => void;
   readonly onWelcome?: (payload: ServerLifecycleWelcomePayload) => void;
@@ -92,6 +94,23 @@ export function createEnvironmentConnection(
     }
   };
 
+  const triggerSnapshotBootstrap = () => {
+    if (input.loadSnapshot === undefined) {
+      return;
+    }
+
+    void input
+      .loadSnapshot()
+      .then((snapshot) => {
+        if (disposed) {
+          return;
+        }
+        input.syncShellSnapshot(snapshot, environmentId);
+        bootstrapGate.resolve();
+      })
+      .catch(() => undefined);
+  };
+
   const unsubLifecycle = input.client.server.subscribeLifecycle(
     (event: Parameters<Parameters<WsRpcClient["server"]["subscribeLifecycle"]>[0]>[0]) => {
       if (event.type !== "welcome") {
@@ -140,6 +159,8 @@ export function createEnvironmentConnection(
     },
   );
 
+  triggerSnapshotBootstrap();
+
   const cleanup = () => {
     disposed = true;
     unsubShell();
@@ -159,6 +180,7 @@ export function createEnvironmentConnection(
       try {
         await input.client.reconnect();
         await input.refreshMetadata?.();
+        triggerSnapshotBootstrap();
         await bootstrapGate.wait();
       } catch (error) {
         bootstrapGate.reject(error);

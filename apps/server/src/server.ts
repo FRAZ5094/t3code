@@ -77,6 +77,7 @@ import {
   orchestrationSnapshotRouteLayer,
 } from "./orchestration/http.ts";
 import { NetService } from "@t3tools/shared/Net";
+import { serverConfigRouteLayer } from "./serverConfigHttp.ts";
 
 const PtyAdapterLive = Layer.unwrap(
   Effect.gen(function* () {
@@ -262,6 +263,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   authPairingCredentialRouteLayer,
   authSessionRouteLayer,
   authWebSocketTokenRouteLayer,
+  serverConfigRouteLayer,
   attachmentsRouteLayer,
   orchestrationDispatchRouteLayer,
   orchestrationSnapshotRouteLayer,
