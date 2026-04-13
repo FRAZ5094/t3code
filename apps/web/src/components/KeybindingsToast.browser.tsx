@@ -26,6 +26,7 @@ import { getWsConnectionStatus } from "../rpc/wsConnectionState";
 import { getRouter } from "../router";
 import { useStore } from "../store";
 import { createAuthenticatedSessionHandlers } from "../../test/authHttpHandlers";
+import { toShellSnapshot } from "../../test/shellSnapshotHelpers";
 import { BrowserWsRpcHarness } from "../../test/wsRpcHarness";
 
 vi.mock("../lib/gitStatusState", () => ({
@@ -166,42 +167,6 @@ function createMinimalSnapshot(): OrchestrationReadModel {
       },
     ],
     updatedAt: NOW_ISO,
-  };
-}
-
-function toShellSnapshot(snapshot: OrchestrationReadModel) {
-  return {
-    snapshotSequence: snapshot.snapshotSequence,
-    projects: snapshot.projects.map((project) => ({
-      id: project.id,
-      title: project.title,
-      workspaceRoot: project.workspaceRoot,
-      defaultModelSelection: project.defaultModelSelection,
-      scripts: project.scripts,
-      createdAt: project.createdAt,
-      updatedAt: project.updatedAt,
-    })),
-    threads: snapshot.threads.map((thread) => ({
-      id: thread.id,
-      projectId: thread.projectId,
-      title: thread.title,
-      modelSelection: thread.modelSelection,
-      runtimeMode: thread.runtimeMode,
-      interactionMode: thread.interactionMode,
-      branch: thread.branch,
-      worktreePath: thread.worktreePath,
-      latestTurn: thread.latestTurn,
-      createdAt: thread.createdAt,
-      updatedAt: thread.updatedAt,
-      archivedAt: thread.archivedAt,
-      session: thread.session,
-      latestUserMessageAt:
-        thread.messages.findLast((message) => message.role === "user")?.createdAt ?? null,
-      hasPendingApprovals: false,
-      hasPendingUserInput: false,
-      hasActionableProposedPlan: false,
-    })),
-    updatedAt: snapshot.updatedAt,
   };
 }
 
