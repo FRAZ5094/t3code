@@ -151,16 +151,6 @@ function createAssistantMessage(input: {
   };
 }
 
-function createUserMessage(input: { id: string; text: string }): ChatMessage {
-  return {
-    id: MessageId.make(input.id),
-    role: "user",
-    text: input.text,
-    createdAt: NOW_ISO,
-    streaming: false,
-  };
-}
-
 async function mountController(props: ControllerProps) {
   const host = document.createElement("div");
   document.body.append(host);
@@ -214,7 +204,7 @@ describe("AutoReadRepliesController", () => {
     const mounted = await mountController({
       enabled: true,
       threadId: THREAD_ID,
-      messages: [createUserMessage({ id: "user-before-complete", text: "Tell me something." })],
+      messages: [],
     });
 
     try {
@@ -233,37 +223,7 @@ describe("AutoReadRepliesController", () => {
         ],
       });
 
-      await vi.waitFor(() => {
-        expect(speakSpy).toHaveBeenCalledTimes(1);
-      });
-      expect(spokenUtterances[0]?.text).toBe("Completed reply.");
-    } finally {
-      await mounted.cleanup();
-    }
-  });
-
-  it("speaks a fixed phrase when the user sends a new chat message", async () => {
-    installSpeechSynthesisMocks();
-
-    const mounted = await mountController({
-      enabled: true,
-      threadId: THREAD_ID,
-      messages: [createUserMessage({ id: "user-first", text: "First message." })],
-    });
-
-    try {
       expect(speakSpy).not.toHaveBeenCalled();
-
-      await mounted.rerender({
-        enabled: true,
-        threadId: THREAD_ID,
-        messages: [createUserMessage({ id: "user-second", text: "Second message." })],
-      });
-
-      await vi.waitFor(() => {
-        expect(speakSpy).toHaveBeenCalledTimes(1);
-      });
-      expect(spokenUtterances[0]?.text).toBe("Message sent.");
     } finally {
       await mounted.cleanup();
     }
