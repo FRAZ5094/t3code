@@ -41,6 +41,7 @@ import {
 import { configureClientTracing } from "../observability/clientTracing";
 import {
   ensurePrimaryEnvironmentReady,
+  fetchPrimaryServerConfig,
   resolveInitialServerAuthGateState,
   updatePrimaryEnvironmentDescriptor,
 } from "../environments/primary";
@@ -177,7 +178,13 @@ function errorDetails(error: unknown): string {
 }
 
 function ServerStateBootstrap() {
-  useEffect(() => startServerStateSync(getPrimaryEnvironmentConnection().client.server), []);
+  useEffect(
+    () =>
+      startServerStateSync(getPrimaryEnvironmentConnection().client.server, {
+        loadInitialConfig: fetchPrimaryServerConfig,
+      }),
+    [],
+  );
 
   return null;
 }

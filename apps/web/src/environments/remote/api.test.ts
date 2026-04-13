@@ -4,7 +4,9 @@ import {
   bootstrapRemoteBearerSession,
   fetchRemoteEnvironmentDescriptor,
   fetchRemoteSessionState,
+  issueWebSocketToken,
   issueRemoteWebSocketToken,
+  resolveWebSocketConnectionUrl,
   resolveRemoteWebSocketConnectionUrl,
 } from "./api";
 import { resolveRemotePairingTarget } from "./target";
@@ -227,6 +229,47 @@ describe("remote environment api", () => {
         bearerToken: "bearer-token",
       }),
     ).resolves.toBe("wss://remote.example.com/?wsToken=ws-token");
+  });
+
+  it("mints websocket tokens for cookie-authenticated environments", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          token: "ws-token",
+          expiresAt: "2026-05-01T12:05:00.000Z",
+        }),
+        { status: 200 },
+      ),
+    );
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    await expect(
+      issueWebSocketToken({
+        httpBaseUrl: "http://100.64.0.10:3773/",
+        credentials: "include",
+      }),
+    ).resolves.toMatchObject({
+      token: "ws-token",
+    });
+
+    await expect(
+      resolveWebSocketConnectionUrl({
+        wsBaseUrl: "ws://100.64.0.10:3773/",
+        httpBaseUrl: "http://100.64.0.10:3773/",
+        credentials: "include",
+      }),
+    ).resolves.toBe("ws://100.64.0.10:3773/?wsToken=ws-token");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://100.64.0.10:3773/api/auth/ws-token", {
+      method: "POST",
+      headers: {},
+      credentials: "include",
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "http://100.64.0.10:3773/api/auth/ws-token", {
+      method: "POST",
+      headers: {},
+      credentials: "include",
+    });
   });
 });
 

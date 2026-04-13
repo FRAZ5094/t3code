@@ -11,6 +11,7 @@ import { type QueryClient } from "@tanstack/react-query";
 import { Throttler } from "@tanstack/react-pacer";
 import {
   createKnownEnvironment,
+  getKnownEnvironmentHttpBaseUrl,
   getKnownEnvironmentWsBaseUrl,
   scopedProjectKey,
   scopedThreadKey,
@@ -29,10 +30,12 @@ import { deriveOrchestrationBatchEffects } from "~/orchestrationEventEffects";
 import { projectQueryKeys } from "~/lib/projectReactQuery";
 import { providerQueryKeys } from "~/lib/providerReactQuery";
 import { getPrimaryKnownEnvironment } from "../primary";
+import { resolvePrimaryEnvironmentHttpUrl } from "../primary";
 import {
   bootstrapRemoteBearerSession,
   fetchRemoteEnvironmentDescriptor,
   fetchRemoteSessionState,
+  resolveWebSocketConnectionUrl,
   resolveRemoteWebSocketConnectionUrl,
 } from "../remote/api";
 import { resolveRemotePairingTarget } from "../remote/target";
@@ -298,17 +301,36 @@ function createEnvironmentConnectionHandlers() {
   };
 }
 
+async function fetchPrimaryOrchestrationSnapshot(): Promise<OrchestrationReadModel> {
+  const response = await fetch(resolvePrimaryEnvironmentHttpUrl("/api/orchestration/snapshot"), {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load orchestration snapshot (${response.status}).`);
+  }
+  return (await response.json()) as OrchestrationReadModel;
+}
+
 function createPrimaryEnvironmentClient(
   knownEnvironment: ReturnType<typeof getPrimaryKnownEnvironment>,
 ) {
+  const httpBaseUrl = getKnownEnvironmentHttpBaseUrl(knownEnvironment);
   const wsBaseUrl = getKnownEnvironmentWsBaseUrl(knownEnvironment);
-  if (!wsBaseUrl) {
+  if (!httpBaseUrl || !wsBaseUrl) {
     throw new Error(
-      `Unable to resolve websocket URL for ${knownEnvironment?.label ?? "primary environment"}.`,
+      `Unable to resolve connection URLs for ${knownEnvironment?.label ?? "primary environment"}.`,
     );
   }
 
-  return createWsRpcClient(new WsTransport(wsBaseUrl));
+  return createWsRpcClient(
+    new WsTransport(() =>
+      resolveWebSocketConnectionUrl({
+        wsBaseUrl,
+        httpBaseUrl,
+        credentials: "include",
+      }),
+    ),
+  );
 }
 
 function createSavedEnvironmentClient(
@@ -408,6 +430,7 @@ function createPrimaryEnvironmentConnection(): EnvironmentConnection {
       kind: "primary",
       knownEnvironment,
       client: createPrimaryEnvironmentClient(knownEnvironment),
+      loadSnapshot: fetchPrimaryOrchestrationSnapshot,
       ...createEnvironmentConnectionHandlers(),
     }),
   );

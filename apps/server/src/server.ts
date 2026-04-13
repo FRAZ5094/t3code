@@ -72,6 +72,7 @@ import {
   orchestrationDispatchRouteLayer,
   orchestrationSnapshotRouteLayer,
 } from "./orchestration/http";
+import { serverConfigRouteLayer } from "./serverConfigHttp";
 
 const PtyAdapterLive = Layer.unwrap(
   Effect.gen(function* () {
@@ -232,6 +233,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   authPairingCredentialRouteLayer,
   authSessionRouteLayer,
   authWebSocketTokenRouteLayer,
+  serverConfigRouteLayer,
   attachmentsRouteLayer,
   orchestrationDispatchRouteLayer,
   orchestrationSnapshotRouteLayer,
