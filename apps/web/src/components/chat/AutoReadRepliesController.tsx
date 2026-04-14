@@ -1,10 +1,6 @@
 import type { ThreadId } from "@t3tools/contracts";
 import { useEffect, useEffectEvent, useRef } from "react";
-import {
-  extractSpeakableChunks,
-  findLatestAssistantMessage,
-  type SpeakableChunk,
-} from "~/lib/autoReadReplies";
+import { extractSpeakableChunks, type SpeakableChunk } from "~/lib/autoReadReplies";
 import type { ChatMessage } from "../../types";
 
 interface AutoReadRepliesControllerProps {
@@ -44,22 +40,32 @@ export function AutoReadRepliesController({
   threadId,
   messages,
 }: AutoReadRepliesControllerProps) {
+  const messagesRef = useRef(messages);
   const speechPrimedRef = useRef(false);
   const observedThreadIdRef = useRef<ThreadId | null>(null);
-  const observedLatestMessageIdRef = useRef<ChatMessage["id"] | null>(null);
-  const observedMessageCountRef = useRef(0);
-  const activeThreadIdRef = useRef<ThreadId | null>(null);
-  const activeMessageIdRef = useRef<ChatMessage["id"] | null>(null);
-  const queuedOffsetRef = useRef(0);
-  const spokenOffsetRef = useRef(0);
-  const completionFlushedRef = useRef(false);
-  const pendingChunksRef = useRef<SpeakableChunk[]>([]);
-  const activeChunkRef = useRef<SpeakableChunk | null>(null);
+  const trackingStartIndexRef = useRef(0);
+  const trackedMessagesRef = useRef(
+    new Map<
+      ChatMessage["id"],
+      {
+        queuedOffset: number;
+        spokenOffset: number;
+        completionFlushed: boolean;
+      }
+    >(),
+  );
+  const pendingChunksRef = useRef<Array<{ messageId: ChatMessage["id"]; chunk: SpeakableChunk }>>(
+    [],
+  );
+  const activeChunkRef = useRef<{ messageId: ChatMessage["id"]; chunk: SpeakableChunk } | null>(
+    null,
+  );
   const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const speakTimeoutIdRef = useRef<number | null>(null);
   const speechGenerationRef = useRef(0);
+  messagesRef.current = messages;
 
-  const clearTracking = useEffectEvent((cancelSpeech: boolean) => {
+  const clearPlayback = useEffectEvent((cancelSpeech: boolean) => {
     if (speakTimeoutIdRef.current !== null) {
       window.clearTimeout(speakTimeoutIdRef.current);
       speakTimeoutIdRef.current = null;
@@ -69,34 +75,52 @@ export function AutoReadRepliesController({
     }
 
     speechGenerationRef.current += 1;
-    activeThreadIdRef.current = null;
-    activeMessageIdRef.current = null;
-    queuedOffsetRef.current = 0;
-    spokenOffsetRef.current = 0;
-    completionFlushedRef.current = false;
     pendingChunksRef.current = [];
     activeChunkRef.current = null;
     activeUtteranceRef.current = null;
   });
 
-  const maybeResetAfterQueueDrain = useEffectEvent(() => {
-    if (!completionFlushedRef.current) {
-      return;
-    }
-    if (activeChunkRef.current !== null || pendingChunksRef.current.length > 0) {
-      return;
-    }
-    if (spokenOffsetRef.current < queuedOffsetRef.current) {
-      return;
-    }
+  const resetTrackingWindow = useEffectEvent((startIndex: number, cancelSpeech: boolean) => {
+    clearPlayback(cancelSpeech);
+    trackingStartIndexRef.current = startIndex;
+    trackedMessagesRef.current.clear();
+  });
 
-    activeThreadIdRef.current = null;
-    activeMessageIdRef.current = null;
-    queuedOffsetRef.current = 0;
-    spokenOffsetRef.current = 0;
-    completionFlushedRef.current = false;
-    pendingChunksRef.current = [];
-    activeChunkRef.current = null;
+  const maybeAdvanceTrackingWindow = useEffectEvent(() => {
+    const currentMessages = messagesRef.current;
+
+    while (trackingStartIndexRef.current < currentMessages.length) {
+      const message = currentMessages[trackingStartIndexRef.current];
+      if (!message) {
+        return;
+      }
+
+      if (message.role !== "assistant") {
+        trackingStartIndexRef.current += 1;
+        continue;
+      }
+
+      const trackedState = trackedMessagesRef.current.get(message.id);
+      if (
+        !trackedState ||
+        message.streaming ||
+        !trackedState.completionFlushed ||
+        trackedState.queuedOffset < message.text.length ||
+        trackedState.spokenOffset < trackedState.queuedOffset
+      ) {
+        return;
+      }
+
+      if (
+        activeChunkRef.current?.messageId === message.id ||
+        pendingChunksRef.current.some((pendingChunk) => pendingChunk.messageId === message.id)
+      ) {
+        return;
+      }
+
+      trackedMessagesRef.current.delete(message.id);
+      trackingStartIndexRef.current += 1;
+    }
   });
 
   const handleUtteranceSettled = useEffectEvent(
@@ -104,15 +128,18 @@ export function AutoReadRepliesController({
       if (speechGenerationRef.current !== speechGeneration) {
         return;
       }
-      if (activeMessageIdRef.current !== messageId) {
+      if (activeChunkRef.current?.messageId !== messageId) {
         return;
       }
 
       activeChunkRef.current = null;
       activeUtteranceRef.current = null;
-      spokenOffsetRef.current = Math.max(spokenOffsetRef.current, chunk.endOffset);
+      const trackedState = trackedMessagesRef.current.get(messageId);
+      if (trackedState) {
+        trackedState.spokenOffset = Math.max(trackedState.spokenOffset, chunk.endOffset);
+      }
       flushPendingChunks();
-      maybeResetAfterQueueDrain();
+      maybeAdvanceTrackingWindow();
     },
   );
 
@@ -130,19 +157,13 @@ export function AutoReadRepliesController({
       return;
     }
 
-    const messageId = activeMessageIdRef.current;
-    if (messageId === null) {
-      pendingChunksRef.current = [];
-      return;
-    }
-
     activeChunkRef.current = nextChunk;
     const speechGeneration = speechGenerationRef.current;
-    const utterance = new SpeechSynthesisUtterance(nextChunk.text);
+    const utterance = new SpeechSynthesisUtterance(nextChunk.chunk.text);
     speechPrimedRef.current = true;
     activeUtteranceRef.current = utterance;
     const handleSettled = () => {
-      handleUtteranceSettled(messageId, nextChunk, speechGeneration);
+      handleUtteranceSettled(nextChunk.messageId, nextChunk.chunk, speechGeneration);
     };
     attachUtteranceSettledHandlers(utterance, handleSettled);
     speakTimeoutIdRef.current = window.setTimeout(() => {
@@ -150,7 +171,7 @@ export function AutoReadRepliesController({
       if (
         speechGenerationRef.current !== speechGeneration ||
         activeUtteranceRef.current !== utterance ||
-        activeMessageIdRef.current !== messageId
+        activeChunkRef.current !== nextChunk
       ) {
         return;
       }
@@ -161,7 +182,7 @@ export function AutoReadRepliesController({
         }
         window.speechSynthesis.speak(utterance);
       } catch {
-        handleUtteranceSettled(messageId, nextChunk, speechGeneration);
+        handleUtteranceSettled(nextChunk.messageId, nextChunk.chunk, speechGeneration);
       }
     }, 0);
   });
@@ -171,105 +192,85 @@ export function AutoReadRepliesController({
       return;
     }
 
+    let trackedState = trackedMessagesRef.current.get(message.id);
+    if (!trackedState) {
+      trackedState = {
+        queuedOffset: 0,
+        spokenOffset: 0,
+        completionFlushed: false,
+      };
+      trackedMessagesRef.current.set(message.id, trackedState);
+    }
+
     const { chunks, nextOffset } = extractSpeakableChunks({
       text: message.text,
-      startOffset: queuedOffsetRef.current,
+      startOffset: trackedState.queuedOffset,
       isComplete: !message.streaming,
     });
 
-    if (chunks.length === 0) {
-      if (!message.streaming) {
-        completionFlushedRef.current = true;
-        maybeResetAfterQueueDrain();
-      }
-      return;
-    }
-
-    queuedOffsetRef.current = nextOffset;
+    trackedState.queuedOffset = nextOffset;
     if (!message.streaming) {
-      completionFlushedRef.current = true;
+      trackedState.completionFlushed = true;
     }
 
-    pendingChunksRef.current.push(...chunks);
+    if (chunks.length > 0) {
+      pendingChunksRef.current.push(
+        ...chunks.map((chunk) => ({
+          messageId: message.id,
+          chunk,
+        })),
+      );
+    }
+
     flushPendingChunks();
+    maybeAdvanceTrackingWindow();
+  });
+
+  const processTrackedMessages = useEffectEvent((candidateMessages: ReadonlyArray<ChatMessage>) => {
+    const sliceStartIndex = trackingStartIndexRef.current;
+    const latestUserIndex = candidateMessages.findLastIndex(
+      (message, index) => index >= sliceStartIndex && message.role === "user",
+    );
+
+    if (latestUserIndex >= sliceStartIndex) {
+      resetTrackingWindow(latestUserIndex + 1, true);
+    }
+
+    for (let index = trackingStartIndexRef.current; index < candidateMessages.length; index += 1) {
+      const message = candidateMessages[index];
+      if (!message || message.role !== "assistant") {
+        continue;
+      }
+
+      enqueueSpeakableChunks(message);
+    }
   });
 
   useEffect(() => {
     if (!enabled || !threadId) {
-      clearTracking(true);
+      resetTrackingWindow(messages.length, true);
       observedThreadIdRef.current = threadId;
-      observedLatestMessageIdRef.current = null;
-      observedMessageCountRef.current = messages.length;
       return;
     }
 
     if (!hasSpeechSynthesisSupport()) {
-      clearTracking(false);
+      resetTrackingWindow(messages.length, false);
       return;
-    }
-
-    if (activeThreadIdRef.current !== null && activeThreadIdRef.current !== threadId) {
-      clearTracking(true);
     }
 
     if (observedThreadIdRef.current !== threadId) {
+      const initialStreamingAssistantIndex = messages.findLastIndex(
+        (message) => message.role === "assistant" && message.streaming,
+      );
+
+      resetTrackingWindow(
+        initialStreamingAssistantIndex === -1 ? messages.length : initialStreamingAssistantIndex,
+        observedThreadIdRef.current !== null,
+      );
       observedThreadIdRef.current = threadId;
-      observedLatestMessageIdRef.current = null;
-      observedMessageCountRef.current = 0;
     }
 
-    const latestAssistantMessage = findLatestAssistantMessage(messages);
-    if (!latestAssistantMessage) {
-      observedLatestMessageIdRef.current = null;
-      observedMessageCountRef.current = messages.length;
-      if (activeMessageIdRef.current !== null) {
-        clearTracking(true);
-      }
-      return;
-    }
-
-    const trackedMessageId = activeMessageIdRef.current;
-    if (trackedMessageId === null) {
-      const previouslyObservedLatestMessageId = observedLatestMessageIdRef.current;
-      const previouslyObservedMessageCount = observedMessageCountRef.current;
-      observedLatestMessageIdRef.current = latestAssistantMessage.id;
-      observedMessageCountRef.current = messages.length;
-
-      if (
-        !latestAssistantMessage.streaming &&
-        previouslyObservedLatestMessageId === null &&
-        previouslyObservedMessageCount === 0
-      ) {
-        return;
-      }
-
-      activeThreadIdRef.current = threadId;
-      activeMessageIdRef.current = latestAssistantMessage.id;
-      queuedOffsetRef.current = 0;
-      spokenOffsetRef.current = 0;
-      completionFlushedRef.current = false;
-      enqueueSpeakableChunks(latestAssistantMessage);
-      return;
-    }
-
-    if (trackedMessageId !== latestAssistantMessage.id) {
-      observedLatestMessageIdRef.current = latestAssistantMessage.id;
-      observedMessageCountRef.current = messages.length;
-      clearTracking(true);
-
-      activeThreadIdRef.current = threadId;
-      activeMessageIdRef.current = latestAssistantMessage.id;
-      queuedOffsetRef.current = 0;
-      spokenOffsetRef.current = 0;
-      completionFlushedRef.current = false;
-      enqueueSpeakableChunks(latestAssistantMessage);
-      return;
-    }
-
-    observedLatestMessageIdRef.current = latestAssistantMessage.id;
-    observedMessageCountRef.current = messages.length;
-    activeThreadIdRef.current = threadId;
-    enqueueSpeakableChunks(latestAssistantMessage);
+    processTrackedMessages(messages);
   }, [enabled, messages, threadId]);
 
   useEffect(() => {
@@ -314,20 +315,15 @@ export function AutoReadRepliesController({
         window.speechSynthesis.cancel();
       }
       speechGenerationRef.current += 1;
-      activeThreadIdRef.current = null;
-      activeMessageIdRef.current = null;
       observedThreadIdRef.current = null;
-      observedLatestMessageIdRef.current = null;
-      observedMessageCountRef.current = 0;
+      trackingStartIndexRef.current = 0;
+      trackedMessagesRef.current.clear();
       speechPrimedRef.current = false;
       activeUtteranceRef.current = null;
       if (speakTimeoutIdRef.current !== null) {
         window.clearTimeout(speakTimeoutIdRef.current);
         speakTimeoutIdRef.current = null;
       }
-      queuedOffsetRef.current = 0;
-      spokenOffsetRef.current = 0;
-      completionFlushedRef.current = false;
       pendingChunksRef.current = [];
       activeChunkRef.current = null;
     },
