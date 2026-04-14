@@ -214,4 +214,25 @@ describe("extractSpeakableChunks", () => {
       nextOffset: text.indexOf("```ts"),
     });
   });
+
+  it("speaks markdown links using only their visible labels", () => {
+    const text =
+      "Open [autoReadReplies.ts](/Users/fraser/Github/t3code/apps/web/src/lib/autoReadReplies.ts:39), [My Report.md](</tmp/My Project/My Report.md:3>), and [OpenAI docs](https://platform.openai.com/docs/models).";
+
+    expect(
+      extractSpeakableChunks({
+        text,
+        startOffset: 0,
+        isComplete: true,
+      }),
+    ).toEqual({
+      chunks: [
+        {
+          text: "Open autoReadReplies.ts, My Report.md, and OpenAI docs.",
+          endOffset: text.length,
+        },
+      ],
+      nextOffset: text.length,
+    });
+  });
 });

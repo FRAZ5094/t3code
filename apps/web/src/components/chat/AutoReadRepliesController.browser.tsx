@@ -321,6 +321,31 @@ describe("AutoReadRepliesController", () => {
     }
   });
 
+  it("speaks markdown links using only their visible labels", async () => {
+    installSpeechSynthesisMocks();
+
+    const mounted = await mountController({
+      enabled: true,
+      threadId: THREAD_ID,
+      messages: [
+        createAssistantMessage({
+          id: "message-links",
+          text: "Open [autoReadReplies.ts](/Users/fraser/Github/t3code/apps/web/src/lib/autoReadReplies.ts:39) and [OpenAI docs](https://platform.openai.com/docs/models).",
+          streaming: true,
+        }),
+      ],
+    });
+
+    try {
+      await vi.waitFor(() => {
+        expect(speakSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(spokenUtterances[0]?.text).toBe("Open autoReadReplies.ts and OpenAI docs.");
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
   it("does not enqueue on every tiny streaming delta", async () => {
     installSpeechSynthesisMocks();
 

@@ -112,7 +112,130 @@ function emitChunk(
 }
 
 function sanitizeSpeakableText(text: string): string {
-  return stripFencedCodeBlocks(text).replaceAll("`", "").trim();
+  return replaceMarkdownLinks(stripFencedCodeBlocks(text)).replaceAll("`", "").trim();
+}
+
+function replaceMarkdownLinks(text: string): string {
+  let result = "";
+  let cursor = 0;
+
+  while (cursor < text.length) {
+    const char = text[cursor];
+
+    if (char === "[" || (char === "!" && text[cursor + 1] === "[")) {
+      const linkStart = char === "!" ? cursor + 1 : cursor;
+      const parsedLink = parseMarkdownLink(text, linkStart);
+
+      if (parsedLink) {
+        result += parsedLink.label;
+        cursor = parsedLink.endOffset;
+        continue;
+      }
+    }
+
+    result += char;
+    cursor += 1;
+  }
+
+  return result;
+}
+
+function parseMarkdownLink(
+  text: string,
+  startBracketOffset: number,
+): { label: string; endOffset: number } | null {
+  if (text.charCodeAt(startBracketOffset) !== 91) {
+    return null;
+  }
+
+  const labelEndOffset = findDelimitedSpanEnd(text, startBracketOffset, "[", "]");
+  if (labelEndOffset === null || text.charCodeAt(labelEndOffset) !== 40) {
+    return null;
+  }
+
+  const destinationStartOffset = labelEndOffset;
+  const destinationEndOffset = findMarkdownLinkDestinationEnd(text, destinationStartOffset);
+  if (destinationEndOffset === null) {
+    return null;
+  }
+
+  return {
+    label: text.slice(startBracketOffset + 1, labelEndOffset - 1),
+    endOffset: destinationEndOffset,
+  };
+}
+
+function findDelimitedSpanEnd(
+  text: string,
+  startOffset: number,
+  openingDelimiter: string,
+  closingDelimiter: string,
+): number | null {
+  let depth = 0;
+
+  for (let index = startOffset; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === "\\") {
+      index += 1;
+      continue;
+    }
+
+    if (char === openingDelimiter) {
+      depth += 1;
+      continue;
+    }
+    if (char !== closingDelimiter) {
+      continue;
+    }
+
+    depth -= 1;
+    if (depth === 0) {
+      return index + 1;
+    }
+  }
+
+  return null;
+}
+
+function findMarkdownLinkDestinationEnd(text: string, startOffset: number): number | null {
+  if (text.charCodeAt(startOffset) !== 40) {
+    return null;
+  }
+
+  const firstDestinationChar = text[startOffset + 1];
+  if (firstDestinationChar === "<") {
+    const angleCloseOffset = text.indexOf(">", startOffset + 2);
+    if (angleCloseOffset === -1 || text.charCodeAt(angleCloseOffset + 1) !== 41) {
+      return null;
+    }
+
+    return angleCloseOffset + 2;
+  }
+
+  let depth = 0;
+
+  for (let index = startOffset; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === "\\") {
+      index += 1;
+      continue;
+    }
+
+    if (char === "(") {
+      depth += 1;
+      continue;
+    }
+    if (char !== ")") {
+      continue;
+    }
+
+    depth -= 1;
+    if (depth === 0) {
+      return index + 1;
+    }
+  }
+
+  return null;
 }
 
 function stripFencedCodeBlocks(text: string): string {
