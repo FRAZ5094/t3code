@@ -64,7 +64,7 @@ import { usePrimaryEnvironmentId } from "../environments/primary";
 import { isElectron } from "../env";
 import { APP_STAGE_LABEL, APP_VERSION } from "../branding";
 import { isTerminalFocused } from "../lib/terminalFocus";
-import { isMacPlatform, newCommandId } from "../lib/utils";
+import { isLinuxPlatform, isMacPlatform, newCommandId } from "../lib/utils";
 import {
   selectProjectByRef,
   selectProjectsAcrossEnvironments,
@@ -101,6 +101,7 @@ import { stackedThreadToast, toastManager } from "./ui/toast";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { Kbd } from "./ui/kbd";
+import { suppressMobileComposerFocusForThread } from "../mobileComposerFocus";
 import {
   getArm64IntelBuildWarningDescription,
   getDesktopUpdateActionError,
@@ -159,6 +160,7 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useCommandPaletteStore } from "../commandPaletteStore";
 import {
   getSidebarThreadIdsToPrewarm,
+  handleSidebarThreadNavigation,
   resolveAdjacentThreadId,
   isContextMenuPointerDown,
   resolveProjectStatusIndicator,
@@ -295,8 +297,12 @@ interface SidebarThreadRowProps {
     event: React.MouseEvent,
     threadRef: ScopedThreadRef,
     orderedProjectThreadKeys: readonly string[],
+    options?: { suppressMobileComposerFocus?: boolean },
   ) => void;
-  navigateToThread: (threadRef: ScopedThreadRef) => void;
+  navigateToThread: (
+    threadRef: ScopedThreadRef,
+    options?: { suppressMobileComposerFocus?: boolean },
+  ) => void;
   handleMultiSelectContextMenu: (position: { x: number; y: number }) => Promise<void>;
   handleThreadContextMenu: (
     threadRef: ScopedThreadRef,
@@ -412,17 +418,19 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   );
   const handleRowClick = useCallback(
     (event: React.MouseEvent) => {
-      handleThreadClick(event, threadRef, orderedProjectThreadKeys);
+      handleThreadClick(event, threadRef, orderedProjectThreadKeys, {
+        suppressMobileComposerFocus: !isActive,
+      });
     },
-    [handleThreadClick, orderedProjectThreadKeys, threadRef],
+    [handleThreadClick, isActive, orderedProjectThreadKeys, threadRef],
   );
   const handleRowKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
       if (event.key !== "Enter" && event.key !== " ") return;
       event.preventDefault();
-      navigateToThread(threadRef);
+      navigateToThread(threadRef, { suppressMobileComposerFocus: !isActive });
     },
-    [navigateToThread, threadRef],
+    [isActive, navigateToThread, threadRef],
   );
   const handleRowContextMenu = useCallback(
     (event: React.MouseEvent) => {
@@ -745,6 +753,7 @@ interface SidebarProjectThreadListProps {
     event: React.MouseEvent,
     threadRef: ScopedThreadRef,
     orderedProjectThreadKeys: readonly string[],
+    options?: { suppressMobileComposerFocus?: boolean },
   ) => void;
   navigateToThread: (threadRef: ScopedThreadRef) => void;
   handleMultiSelectContextMenu: (position: { x: number; y: number }) => Promise<void>;
@@ -946,8 +955,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const sidebarThreadPreviewCount = useSettings<SidebarThreadPreviewCount>(
     (settings) => settings.sidebarThreadPreviewCount,
   );
-  const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
+  const router = useRouter();
   const markThreadUnread = useUiStateStore((state) => state.markThreadUnread);
   const toggleProject = useUiStateStore((state) => state.toggleProject);
   const toggleThreadSelection = useThreadSelectionStore((state) => state.toggleThread);
@@ -1530,17 +1539,23 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   );
 
   const navigateToThread = useCallback(
-    (threadRef: ScopedThreadRef) => {
-      if (useThreadSelectionStore.getState().selectedThreadKeys.size > 0) {
-        clearSelection();
+    (threadRef: ScopedThreadRef, options?: { suppressMobileComposerFocus?: boolean }) => {
+      if (isMobile && options?.suppressMobileComposerFocus) {
+        suppressMobileComposerFocusForThread(threadRef);
       }
-      setSelectionAnchor(scopedThreadKey(threadRef));
-      if (isMobile) {
-        setOpenMobile(false);
-      }
-      void router.navigate({
-        to: "/$environmentId/$threadId",
-        params: buildThreadRouteParams(threadRef),
+      handleSidebarThreadNavigation({
+        clearSelection,
+        isMobile,
+        navigate: () => {
+          void router.navigate({
+            to: "/$environmentId/$threadId",
+            params: buildThreadRouteParams(threadRef),
+          });
+        },
+        selectedThreadCount: useThreadSelectionStore.getState().selectedThreadKeys.size,
+        setOpenMobile,
+        setSelectionAnchor,
+        threadRef,
       });
     },
     [clearSelection, isMobile, router, setOpenMobile, setSelectionAnchor],
@@ -1551,12 +1566,12 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       event: React.MouseEvent,
       threadRef: ScopedThreadRef,
       orderedProjectThreadKeys: readonly string[],
+      options?: { suppressMobileComposerFocus?: boolean },
     ) => {
       const isMac = isMacPlatform(navigator.platform);
       const isModClick = isMac ? event.metaKey : event.ctrlKey;
       const isShiftClick = event.shiftKey;
       const threadKey = scopedThreadKey(threadRef);
-      const currentSelectionCount = useThreadSelectionStore.getState().selectedThreadKeys.size;
 
       if (isModClick) {
         event.preventDefault();
@@ -1570,27 +1585,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         return;
       }
 
-      if (currentSelectionCount > 0) {
-        clearSelection();
-      }
-      setSelectionAnchor(threadKey);
-      if (isMobile) {
-        setOpenMobile(false);
-      }
-      void router.navigate({
-        to: "/$environmentId/$threadId",
-        params: buildThreadRouteParams(threadRef),
-      });
+      navigateToThread(threadRef, options);
     },
-    [
-      clearSelection,
-      isMobile,
-      rangeSelectTo,
-      router,
-      setOpenMobile,
-      setSelectionAnchor,
-      toggleThreadSelection,
-    ],
+    [navigateToThread, rangeSelectTo, toggleThreadSelection],
   );
 
   const handleMultiSelectContextMenu = useCallback(
@@ -2811,6 +2808,12 @@ export default function Sidebar() {
   const routeThreadKey = routeThreadRef ? scopedThreadKey(routeThreadRef) : null;
   const keybindings = useServerKeybindings();
   const openAddProjectCommandPalette = useCommandPaletteStore((store) => store.openAddProject);
+  const [addingProject, setAddingProject] = useState(false);
+  const [newCwd, setNewCwd] = useState("");
+  const [isPickingFolder, setIsPickingFolder] = useState(false);
+  const [isAddingProject, setIsAddingProject] = useState(false);
+  const [addProjectError, setAddProjectError] = useState<string | null>(null);
+  const addProjectInputRef = useRef<HTMLInputElement | null>(null);
   const [expandedThreadListsByProject, setExpandedThreadListsByProject] = useState<
     ReadonlySet<string>
   >(() => new Set());
@@ -2821,7 +2824,10 @@ export default function Sidebar() {
   const [desktopUpdateState, setDesktopUpdateState] = useState<DesktopUpdateState | null>(null);
   const clearSelection = useThreadSelectionStore((s) => s.clearSelection);
   const setSelectionAnchor = useThreadSelectionStore((s) => s.setAnchor);
+  const { isMobile, setOpenMobile } = useSidebar();
+  const isLinuxDesktop = isElectron && isLinuxPlatform(navigator.platform);
   const platform = navigator.platform;
+  const shouldBrowseForProjectImmediately = isElectron && !isLinuxDesktop;
   const shortcutModifiers = useShortcutModifierState();
   const modelPickerOpen = useModelPickerOpen();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -2948,23 +2954,155 @@ export default function Sidebar() {
   const newThreadShortcutLabel =
     shortcutLabelForCommand(keybindings, "chat.newLocal", newThreadShortcutLabelOptions) ??
     shortcutLabelForCommand(keybindings, "chat.new", newThreadShortcutLabelOptions);
-
   const navigateToThread = useCallback(
     (threadRef: ScopedThreadRef) => {
-      if (useThreadSelectionStore.getState().selectedThreadKeys.size > 0) {
-        clearSelection();
-      }
-      setSelectionAnchor(scopedThreadKey(threadRef));
-      if (isMobile) {
-        setOpenMobile(false);
-      }
-      void navigate({
-        to: "/$environmentId/$threadId",
-        params: buildThreadRouteParams(threadRef),
+      handleSidebarThreadNavigation({
+        clearSelection,
+        isMobile,
+        navigate: () => {
+          void navigate({
+            to: "/$environmentId/$threadId",
+            params: buildThreadRouteParams(threadRef),
+          });
+        },
+        selectedThreadCount: useThreadSelectionStore.getState().selectedThreadKeys.size,
+        setOpenMobile,
+        setSelectionAnchor,
+        threadRef,
       });
     },
     [clearSelection, isMobile, navigate, setOpenMobile, setSelectionAnchor],
   );
+  const focusMostRecentThreadForProject = useCallback(
+    (projectRef: { environmentId: EnvironmentId; projectId: ProjectId }) => {
+      const scopedProjectKeyValue = scopedProjectKey(
+        scopeProjectRef(projectRef.environmentId, projectRef.projectId),
+      );
+      const physicalKey =
+        projectPhysicalKeyByScopedRef.get(scopedProjectKeyValue) ?? scopedProjectKeyValue;
+      const logicalKey = physicalToLogicalKey.get(physicalKey) ?? physicalKey;
+      const latestThread = sortThreads(
+        (threadsByProjectKey.get(logicalKey) ?? []).filter((thread) => thread.archivedAt === null),
+        sidebarThreadSortOrder,
+      )[0];
+      if (!latestThread) return;
+
+      navigateToThread(scopeThreadRef(latestThread.environmentId, latestThread.id));
+    },
+    [
+      navigateToThread,
+      physicalToLogicalKey,
+      projectPhysicalKeyByScopedRef,
+      sidebarThreadSortOrder,
+      threadsByProjectKey,
+    ],
+  );
+
+  const addProjectFromInput = useCallback(
+    async (rawCwd: string) => {
+      const cwd = rawCwd.trim();
+      if (!cwd || isAddingProject) return;
+      const api = activeEnvironmentId ? readEnvironmentApi(activeEnvironmentId) : undefined;
+      if (!api) return;
+
+      setIsAddingProject(true);
+      const finishAddingProject = () => {
+        setIsAddingProject(false);
+        setNewCwd("");
+        setAddProjectError(null);
+        setAddingProject(false);
+      };
+
+      const existing = projects.find((project) => project.cwd === cwd);
+      if (existing) {
+        focusMostRecentThreadForProject({
+          environmentId: existing.environmentId,
+          projectId: existing.id,
+        });
+        finishAddingProject();
+        return;
+      }
+
+      const projectId = newProjectId();
+      const title = cwd.split(/[/\\]/).findLast(isNonEmptyString) ?? cwd;
+      try {
+        await api.orchestration.dispatchCommand({
+          type: "project.create",
+          commandId: newCommandId(),
+          projectId,
+          title,
+          workspaceRoot: cwd,
+          defaultModelSelection: {
+            provider: "codex",
+            model: DEFAULT_MODEL_BY_PROVIDER.codex,
+          },
+          createdAt: new Date().toISOString(),
+        });
+        if (activeEnvironmentId !== null) {
+          await handleNewThread(scopeProjectRef(activeEnvironmentId, projectId), {
+            envMode: defaultThreadEnvMode,
+          }).catch(() => undefined);
+        }
+      } catch (error) {
+        const description =
+          error instanceof Error ? error.message : "An error occurred while adding the project.";
+        setIsAddingProject(false);
+        if (shouldBrowseForProjectImmediately) {
+          toastManager.add({
+            type: "error",
+            title: "Failed to add project",
+            description,
+          });
+        } else {
+          setAddProjectError(description);
+        }
+        return;
+      }
+      finishAddingProject();
+    },
+    [
+      focusMostRecentThreadForProject,
+      activeEnvironmentId,
+      handleNewThread,
+      isAddingProject,
+      projects,
+      shouldBrowseForProjectImmediately,
+      defaultThreadEnvMode,
+    ],
+  );
+
+  const handleAddProject = () => {
+    void addProjectFromInput(newCwd);
+  };
+
+  const canAddProject = newCwd.trim().length > 0 && !isAddingProject;
+
+  const handlePickFolder = async () => {
+    const api = readLocalApi();
+    if (!api || isPickingFolder) return;
+    setIsPickingFolder(true);
+    let pickedPath: string | null = null;
+    try {
+      pickedPath = await api.dialogs.pickFolder();
+    } catch {
+      // Ignore picker failures and leave the current thread selection unchanged.
+    }
+    if (pickedPath) {
+      await addProjectFromInput(pickedPath);
+    } else if (!shouldBrowseForProjectImmediately) {
+      addProjectInputRef.current?.focus();
+    }
+    setIsPickingFolder(false);
+  };
+
+  const handleStartAddProject = () => {
+    setAddProjectError(null);
+    if (shouldBrowseForProjectImmediately) {
+      void handlePickFolder();
+      return;
+    }
+    setAddingProject((prev) => !prev);
+  };
 
   const projectDnDSensors = useSensors(
     useSensor(PointerSensor, {
