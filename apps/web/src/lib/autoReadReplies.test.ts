@@ -171,8 +171,8 @@ describe("extractSpeakableChunks", () => {
     });
   });
 
-  it("strips markdown backticks from emitted speech chunks", () => {
-    const text = "Use `bun run test` here.\n\n```ts\nconst value = 1;\n```";
+  it("strips inline backticks and skips fenced code blocks from emitted speech chunks", () => {
+    const text = "Use `bun run test` here.\n\n```ts\nconst value = 1;\n```\n\nAfterwards.";
 
     expect(
       extractSpeakableChunks({
@@ -184,14 +184,34 @@ describe("extractSpeakableChunks", () => {
       chunks: [
         {
           text: "Use bun run test here.",
-          endOffset: text.indexOf("```ts"),
+          endOffset: text.indexOf("Afterwards."),
         },
         {
-          text: "ts\nconst value = 1;",
-          endOffset: text.lastIndexOf("\n```") + 1,
+          text: "Afterwards.",
+          endOffset: text.length,
         },
       ],
       nextOffset: text.length,
+    });
+  });
+
+  it("waits for a fenced code block to close before advancing past it while streaming", () => {
+    const text = "Before code.\n\n```ts\nconst value = 1;";
+
+    expect(
+      extractSpeakableChunks({
+        text,
+        startOffset: 0,
+        isComplete: false,
+      }),
+    ).toEqual({
+      chunks: [
+        {
+          text: "Before code.",
+          endOffset: text.indexOf("```ts"),
+        },
+      ],
+      nextOffset: text.indexOf("```ts"),
     });
   });
 });

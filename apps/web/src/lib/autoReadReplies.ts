@@ -44,7 +44,11 @@ export function extractSpeakableChunks(
   let cursor = clampOffset(input.startOffset, text.length);
 
   while (cursor < text.length) {
-    cursor = skipWhitespace(text, cursor);
+    const prefixSkipResult = skipUnspeakablePrefix(text, cursor, input.isComplete);
+    cursor = prefixSkipResult.offset;
+    if (prefixSkipResult.blocked) {
+      break;
+    }
     if (cursor >= text.length) {
       break;
     }
@@ -108,7 +112,84 @@ function emitChunk(
 }
 
 function sanitizeSpeakableText(text: string): string {
-  return text.replaceAll("`", "").trim();
+  return stripFencedCodeBlocks(text).replaceAll("`", "").trim();
+}
+
+function stripFencedCodeBlocks(text: string): string {
+  let result = "";
+  let cursor = 0;
+
+  while (cursor < text.length) {
+    const fenceStart = text.indexOf("```", cursor);
+    if (fenceStart === -1) {
+      result += text.slice(cursor);
+      break;
+    }
+
+    result += text.slice(cursor, fenceStart);
+    const fenceEnd = findFencedCodeBlockEnd(text, fenceStart, true);
+    if (fenceEnd === null) {
+      result += text.slice(fenceStart, fenceStart + 3);
+      cursor = fenceStart + 3;
+      continue;
+    }
+    if (fenceEnd === "blocked") {
+      break;
+    }
+    cursor = fenceEnd;
+  }
+
+  return result;
+}
+
+function skipUnspeakablePrefix(
+  text: string,
+  startOffset: number,
+  isComplete: boolean,
+): { offset: number; blocked: boolean } {
+  let cursor = startOffset;
+
+  while (cursor < text.length) {
+    cursor = skipWhitespace(text, cursor);
+    if (cursor >= text.length) {
+      return { offset: cursor, blocked: false };
+    }
+
+    const fencedCodeBlockEnd = findFencedCodeBlockEnd(text, cursor, isComplete);
+    if (fencedCodeBlockEnd === null) {
+      return { offset: cursor, blocked: false };
+    }
+    if (fencedCodeBlockEnd === "blocked") {
+      return { offset: cursor, blocked: true };
+    }
+
+    cursor = fencedCodeBlockEnd;
+  }
+
+  return { offset: cursor, blocked: false };
+}
+
+function findFencedCodeBlockEnd(
+  text: string,
+  startOffset: number,
+  isComplete: boolean,
+): number | "blocked" | null {
+  if (!text.startsWith("```", startOffset)) {
+    return null;
+  }
+
+  const openingFenceLineEnd = text.indexOf("\n", startOffset + 3);
+  if (openingFenceLineEnd === -1) {
+    return isComplete ? text.length : "blocked";
+  }
+
+  const closingFenceMatch = text.slice(openingFenceLineEnd + 1).match(/(^|\n)```[^\S\n]*(\n|$)/);
+
+  if (!closingFenceMatch || closingFenceMatch.index == null) {
+    return isComplete ? text.length : "blocked";
+  }
+
+  return openingFenceLineEnd + 1 + closingFenceMatch.index + closingFenceMatch[0].length;
 }
 
 function findNaturalBoundaryEnd(
