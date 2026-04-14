@@ -7,6 +7,7 @@ import {
   getFallbackThreadIdAfterDelete,
   getVisibleThreadsForProject,
   getProjectSortTimestamp,
+  handleSidebarThreadNavigation,
   hasUnseenCompletion,
   isContextMenuPointerDown,
   orderItemsByPreferredIds,
@@ -146,6 +147,60 @@ describe("shouldClearThreadSelectionOnMouseDown", () => {
     } as unknown as HTMLElement;
 
     expect(shouldClearThreadSelectionOnMouseDown(unrelated)).toBe(true);
+  });
+});
+
+describe("handleSidebarThreadNavigation", () => {
+  it("closes the mobile sidebar before navigating to the selected thread", () => {
+    const clearSelection = vi.fn();
+    const navigate = vi.fn();
+    const setOpenMobile = vi.fn();
+    const setSelectionAnchor = vi.fn();
+    const threadRef = {
+      environmentId: localEnvironmentId,
+      threadId: ThreadId.make("thread-mobile"),
+    };
+
+    handleSidebarThreadNavigation({
+      clearSelection,
+      isMobile: true,
+      navigate,
+      selectedThreadCount: 2,
+      setOpenMobile,
+      setSelectionAnchor,
+      threadRef,
+    });
+
+    expect(clearSelection).toHaveBeenCalledOnce();
+    expect(setSelectionAnchor).toHaveBeenCalledWith("environment-local:thread-mobile");
+    expect(setOpenMobile).toHaveBeenCalledWith(false);
+    expect(navigate).toHaveBeenCalledOnce();
+  });
+
+  it("leaves the desktop sidebar open while still navigating", () => {
+    const clearSelection = vi.fn();
+    const navigate = vi.fn();
+    const setOpenMobile = vi.fn();
+    const setSelectionAnchor = vi.fn();
+    const threadRef = {
+      environmentId: localEnvironmentId,
+      threadId: ThreadId.make("thread-desktop"),
+    };
+
+    handleSidebarThreadNavigation({
+      clearSelection,
+      isMobile: false,
+      navigate,
+      selectedThreadCount: 0,
+      setOpenMobile,
+      setSelectionAnchor,
+      threadRef,
+    });
+
+    expect(clearSelection).not.toHaveBeenCalled();
+    expect(setSelectionAnchor).toHaveBeenCalledWith("environment-local:thread-desktop");
+    expect(setOpenMobile).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledOnce();
   });
 });
 
