@@ -94,6 +94,7 @@ import {
 } from "../types";
 import { useTheme } from "../hooks/useTheme";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
+import { useIsMobile } from "../hooks/useMediaQuery";
 import { useCommandPaletteStore } from "../commandPaletteStore";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
@@ -136,6 +137,7 @@ import {
   type TerminalContextSelection,
 } from "../lib/terminalContext";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
+import { consumeMobileComposerFocusSuppression } from "../mobileComposerFocus";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { AutoReadRepliesController } from "./chat/AutoReadRepliesController";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
@@ -687,6 +689,7 @@ export default function ChatView(props: ChatViewProps) {
   const composerTerminalContextsRef = useRef<TerminalContextDraft[]>([]);
   const localComposerRef = useRef<ChatComposerHandle | null>(null);
   const composerRef = useComposerHandleContext() ?? localComposerRef;
+  const isMobile = useIsMobile();
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
@@ -2065,13 +2068,27 @@ export default function ChatView(props: ChatViewProps) {
 
   useEffect(() => {
     if (!activeThread?.id || terminalState.terminalOpen) return;
+    if (
+      isMobile &&
+      consumeMobileComposerFocusSuppression(
+        scopeThreadRef(activeThread.environmentId, activeThread.id),
+      )
+    ) {
+      return;
+    }
     const frame = window.requestAnimationFrame(() => {
       focusComposer();
     });
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [activeThread?.id, focusComposer, terminalState.terminalOpen]);
+  }, [
+    activeThread?.environmentId,
+    activeThread?.id,
+    focusComposer,
+    isMobile,
+    terminalState.terminalOpen,
+  ]);
 
   useEffect(() => {
     if (!activeThread?.id) return;

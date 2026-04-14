@@ -1,4 +1,6 @@
 import * as React from "react";
+import { scopedThreadKey } from "@t3tools/client-runtime";
+import type { ScopedThreadRef } from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import {
   getThreadSortTimestamp,
@@ -158,6 +160,26 @@ export function hasUnseenCompletion(thread: ThreadStatusInput): boolean {
 export function shouldClearThreadSelectionOnMouseDown(target: HTMLElement | null): boolean {
   if (target === null) return true;
   return !target.closest(THREAD_SELECTION_SAFE_SELECTOR);
+}
+
+export function handleSidebarThreadNavigation(input: {
+  clearSelection: () => void;
+  isMobile: boolean;
+  navigate: () => void;
+  selectedThreadCount: number;
+  setOpenMobile: (open: boolean) => void;
+  setSelectionAnchor: (threadKey: string) => void;
+  threadRef: ScopedThreadRef;
+}): void {
+  if (input.selectedThreadCount > 0) {
+    input.clearSelection();
+  }
+
+  input.setSelectionAnchor(scopedThreadKey(input.threadRef));
+  if (input.isMobile) {
+    input.setOpenMobile(false);
+  }
+  input.navigate();
 }
 
 export function resolveSidebarNewThreadEnvMode(input: {
