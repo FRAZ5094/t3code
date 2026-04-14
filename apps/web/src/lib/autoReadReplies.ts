@@ -95,7 +95,7 @@ function emitChunk(
   startOffset: number,
   endOffset: number,
 ): number {
-  const trimmedText = text.slice(startOffset, endOffset).trim();
+  const trimmedText = sanitizeSpeakableText(text.slice(startOffset, endOffset));
 
   if (trimmedText.length > 0) {
     chunks.push({
@@ -105,6 +105,10 @@ function emitChunk(
   }
 
   return endOffset;
+}
+
+function sanitizeSpeakableText(text: string): string {
+  return text.replaceAll("`", "").trim();
 }
 
 function findNaturalBoundaryEnd(
