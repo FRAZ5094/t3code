@@ -289,6 +289,38 @@ describe("AutoReadRepliesController", () => {
     }
   });
 
+  it("skips fenced code blocks when speaking reply chunks", async () => {
+    installSpeechSynthesisMocks();
+
+    const mounted = await mountController({
+      enabled: true,
+      threadId: THREAD_ID,
+      messages: [
+        createAssistantMessage({
+          id: "message-fenced-code",
+          text: "Before code.\n\n```ts\nconst value = 1;\n```\n\nAfter code.",
+          streaming: true,
+        }),
+      ],
+    });
+
+    try {
+      await vi.waitFor(() => {
+        expect(speakSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(spokenUtterances[0]?.text).toBe("Before code.");
+
+      spokenUtterances[0]?.emitEnd();
+
+      await vi.waitFor(() => {
+        expect(speakSpy).toHaveBeenCalledTimes(2);
+      });
+      expect(spokenUtterances[1]?.text).toBe("After code.");
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
   it("does not enqueue on every tiny streaming delta", async () => {
     installSpeechSynthesisMocks();
 
