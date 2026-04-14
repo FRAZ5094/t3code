@@ -151,6 +151,16 @@ function createAssistantMessage(input: {
   };
 }
 
+function createUserMessage(input: { id: string; text: string }): ChatMessage {
+  return {
+    id: MessageId.make(input.id),
+    role: "user",
+    text: input.text,
+    createdAt: NOW_ISO,
+    streaming: false,
+  };
+}
+
 async function mountController(props: ControllerProps) {
   const host = document.createElement("div");
   document.body.append(host);
@@ -223,7 +233,10 @@ describe("AutoReadRepliesController", () => {
         ],
       });
 
-      expect(speakSpy).not.toHaveBeenCalled();
+      await vi.waitFor(() => {
+        expect(speakSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(spokenUtterances[0]?.text).toBe("Completed reply.");
     } finally {
       await mounted.cleanup();
     }
@@ -523,7 +536,7 @@ describe("AutoReadRepliesController", () => {
     }
   });
 
-  it("cancels stale speech and switches when a newer assistant message begins", async () => {
+  it("queues newer assistant replies behind the current utterance", async () => {
     installSpeechSynthesisMocks();
 
     const mounted = await mountController({
@@ -558,8 +571,83 @@ describe("AutoReadRepliesController", () => {
         ],
       });
 
+      expect(cancelSpy).not.toHaveBeenCalled();
+      expect(speakSpy).toHaveBeenCalledTimes(1);
+
+      spokenUtterances[0]?.emitEnd();
+
+      await vi.waitFor(() => {
+        expect(speakSpy).toHaveBeenCalledTimes(2);
+      });
+      expect(spokenUtterances[1]?.text).toBe("Newer reply.");
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("interrupts assistant speech when a user message arrives", async () => {
+    installSpeechSynthesisMocks();
+
+    const mounted = await mountController({
+      enabled: true,
+      threadId: THREAD_ID,
+      messages: [
+        createAssistantMessage({
+          id: "message-before-user",
+          text: "Older reply.",
+          streaming: true,
+        }),
+      ],
+    });
+
+    try {
+      await vi.waitFor(() => {
+        expect(speakSpy).toHaveBeenCalledTimes(1);
+      });
+
+      await mounted.rerender({
+        enabled: true,
+        threadId: THREAD_ID,
+        messages: [
+          createAssistantMessage({
+            id: "message-before-user",
+            text: "Older reply.",
+            streaming: true,
+          }),
+          createUserMessage({
+            id: "message-user",
+            text: "Please answer again.",
+          }),
+        ],
+      });
+
       await vi.waitFor(() => {
         expect(cancelSpy).toHaveBeenCalledTimes(1);
+      });
+
+      await mounted.rerender({
+        enabled: true,
+        threadId: THREAD_ID,
+        messages: [
+          createAssistantMessage({
+            id: "message-before-user",
+            text: "Older reply.",
+            streaming: false,
+            completedAt: NOW_ISO,
+          }),
+          createUserMessage({
+            id: "message-user",
+            text: "Please answer again.",
+          }),
+          createAssistantMessage({
+            id: "message-after-user",
+            text: "Newer reply.",
+            streaming: true,
+          }),
+        ],
+      });
+
+      await vi.waitFor(() => {
         expect(speakSpy).toHaveBeenCalledTimes(2);
       });
       expect(spokenUtterances[1]?.text).toBe("Newer reply.");
