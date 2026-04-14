@@ -170,4 +170,28 @@ describe("extractSpeakableChunks", () => {
       nextOffset: text.length,
     });
   });
+
+  it("strips markdown backticks from emitted speech chunks", () => {
+    const text = "Use `bun run test` here.\n\n```ts\nconst value = 1;\n```";
+
+    expect(
+      extractSpeakableChunks({
+        text,
+        startOffset: 0,
+        isComplete: true,
+      }),
+    ).toEqual({
+      chunks: [
+        {
+          text: "Use bun run test here.",
+          endOffset: text.indexOf("```ts"),
+        },
+        {
+          text: "ts\nconst value = 1;",
+          endOffset: text.lastIndexOf("\n```") + 1,
+        },
+      ],
+      nextOffset: text.length,
+    });
+  });
 });

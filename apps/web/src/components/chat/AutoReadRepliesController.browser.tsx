@@ -264,6 +264,31 @@ describe("AutoReadRepliesController", () => {
     }
   });
 
+  it("strips markdown backticks before speaking a reply chunk", async () => {
+    installSpeechSynthesisMocks();
+
+    const mounted = await mountController({
+      enabled: true,
+      threadId: THREAD_ID,
+      messages: [
+        createAssistantMessage({
+          id: "message-markdown",
+          text: "Run `bun run test` now.",
+          streaming: true,
+        }),
+      ],
+    });
+
+    try {
+      await vi.waitFor(() => {
+        expect(speakSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(spokenUtterances[0]?.text).toBe("Run bun run test now.");
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
   it("does not enqueue on every tiny streaming delta", async () => {
     installSpeechSynthesisMocks();
 
