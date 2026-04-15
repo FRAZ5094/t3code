@@ -536,6 +536,67 @@ describe("AutoReadRepliesController", () => {
     }
   });
 
+  it("reads the latest assistant reply in full when re-enabled after being disabled", async () => {
+    installSpeechSynthesisMocks();
+
+    const olderReply = createAssistantMessage({
+      id: "message-before-toggle",
+      text: "Older reply.",
+      streaming: false,
+      completedAt: NOW_ISO,
+    });
+    const completedLatestReply = createAssistantMessage({
+      id: "message-toggle-latest",
+      text: "First sentence. Second sentence.",
+      streaming: false,
+      completedAt: NOW_ISO,
+    });
+
+    const mounted = await mountController({
+      enabled: true,
+      threadId: THREAD_ID,
+      messages: [
+        olderReply,
+        createAssistantMessage({
+          id: "message-toggle-latest",
+          text: "First sentence.",
+          streaming: true,
+        }),
+      ],
+    });
+
+    try {
+      await vi.waitFor(() => {
+        expect(speakSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(spokenUtterances[0]?.text).toBe("First sentence.");
+
+      await mounted.rerender({
+        enabled: false,
+        threadId: THREAD_ID,
+        messages: [olderReply, completedLatestReply],
+      });
+
+      await vi.waitFor(() => {
+        expect(cancelSpy).toHaveBeenCalledTimes(1);
+      });
+
+      await mounted.rerender({
+        enabled: true,
+        threadId: THREAD_ID,
+        messages: [olderReply, completedLatestReply],
+      });
+
+      await vi.waitFor(() => {
+        expect(speakSpy).toHaveBeenCalledTimes(2);
+      });
+      expect(spokenUtterances[1]?.text).toBe("First sentence. Second sentence.");
+      expect(cancelSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
   it("queues newer assistant replies behind the current utterance", async () => {
     installSpeechSynthesisMocks();
 
