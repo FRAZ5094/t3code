@@ -151,6 +151,7 @@ import { useCommandPaletteStore } from "../commandPaletteStore";
 import {
   getSidebarThreadIdsToPrewarm,
   handleSidebarThreadNavigation,
+  closeMobileSidebarForNavigation,
   resolveAdjacentThreadId,
   isContextMenuPointerDown,
   resolveProjectStatusIndicator,
@@ -1671,6 +1672,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
               }
             : null,
       });
+      closeMobileSidebarForNavigation({ isMobile, setOpenMobile });
       void handleNewThread(scopeProjectRef(member.environmentId, member.id), {
         ...(seedContext.branch !== undefined ? { branch: seedContext.branch } : {}),
         ...(seedContext.worktreePath !== undefined
@@ -1679,7 +1681,13 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         envMode: seedContext.envMode,
       });
     },
-    [defaultThreadEnvMode, handleNewThread, router],
+    [
+      defaultThreadEnvMode,
+      handleNewThread,
+      isMobile,
+      router,
+      setOpenMobile,
+    ],
   );
 
   const handleCreateThreadClick = useCallback(
