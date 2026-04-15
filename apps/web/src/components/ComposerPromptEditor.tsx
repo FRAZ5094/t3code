@@ -8,6 +8,7 @@ import { PlainTextPlugin } from "@lexical/react/LexicalPlainTextPlugin";
 import { type ServerProviderSkill } from "@t3tools/contracts";
 import {
   $applyNodeReplacement,
+  $addUpdateTag,
   $createRangeSelection,
   $getSelection,
   $setSelection,
@@ -26,6 +27,8 @@ import {
   KEY_TAB_COMMAND,
   COMMAND_PRIORITY_HIGH,
   KEY_BACKSPACE_COMMAND,
+  PASTE_COMMAND,
+  PASTE_TAG,
   $getRoot,
   HISTORY_MERGE_TAG,
   DecoratorNode,
@@ -1142,6 +1145,53 @@ function ComposerInlineTokenBackspacePlugin() {
   return null;
 }
 
+function getPlainTextFromPasteInputEvent(event: InputEvent): string | null {
+  if (event.inputType !== "insertFromPaste" && event.inputType !== "insertFromPasteAsQuotation") {
+    return null;
+  }
+
+  const transferredText =
+    event.dataTransfer?.getData("text/plain") || event.dataTransfer?.getData("text/uri-list");
+  if (transferredText) {
+    return transferredText;
+  }
+
+  return event.data || null;
+}
+
+function ComposerInputEventPastePlugin() {
+  const [editor] = useLexicalComposerContext();
+
+  useEffect(() => {
+    return editor.registerCommand(
+      PASTE_COMMAND,
+      (event) => {
+        if (typeof InputEvent === "undefined" || !(event instanceof InputEvent)) {
+          return false;
+        }
+
+        const text = getPlainTextFromPasteInputEvent(event);
+        if (text === null) {
+          return false;
+        }
+
+        const selection = $getSelection();
+        if (!$isRangeSelection(selection)) {
+          return false;
+        }
+
+        event.preventDefault();
+        $addUpdateTag(PASTE_TAG);
+        selection.insertRawText(text);
+        return true;
+      },
+      COMMAND_PRIORITY_HIGH,
+    );
+  }, [editor]);
+
+  return null;
+}
+
 function ComposerSurroundSelectionPlugin(props: {
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
   skills: ReadonlyArray<ServerProviderSkill>;
@@ -1659,6 +1709,7 @@ function ComposerPromptEditorInner({
         <OnChangePlugin onChange={handleEditorChange} />
         <ComposerCommandKeyPlugin {...(onCommandKeyDown ? { onCommandKeyDown } : {})} />
         <ComposerSurroundSelectionPlugin terminalContexts={terminalContexts} skills={skills} />
+        <ComposerInputEventPastePlugin />
         <ComposerInlineTokenArrowPlugin />
         <ComposerInlineTokenSelectionNormalizePlugin />
         <ComposerInlineTokenBackspacePlugin />
