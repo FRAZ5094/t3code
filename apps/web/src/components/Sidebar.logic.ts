@@ -173,10 +173,18 @@ export function handleSidebarThreadNavigation(input: {
   }
 
   input.setSelectionAnchor(scopedThreadKey(input.threadRef));
-  if (input.isMobile) {
-    input.setOpenMobile(false);
-  }
+  closeMobileSidebarForNavigation(input);
   input.navigate();
+}
+
+export function closeMobileSidebarForNavigation(input: {
+  isMobile: boolean;
+  setOpenMobile: (open: boolean) => void;
+}): void {
+  if (!input.isMobile) {
+    return;
+  }
+  input.setOpenMobile(false);
 }
 
 export function resolveSidebarNewThreadEnvMode(input: {

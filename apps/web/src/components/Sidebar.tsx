@@ -125,6 +125,7 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { isNonEmpty as isNonEmptyString } from "effect/String";
 import {
   handleSidebarThreadNavigation,
+  closeMobileSidebarForNavigation,
   resolveAdjacentThreadId,
   isContextMenuPointerDown,
   resolveProjectStatusIndicator,
@@ -1537,6 +1538,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
               }
             : null,
       });
+      closeMobileSidebarForNavigation({ isMobile, setOpenMobile });
       void handleNewThread(scopeProjectRef(project.environmentId, project.id), {
         ...(seedContext.branch !== undefined ? { branch: seedContext.branch } : {}),
         ...(seedContext.worktreePath !== undefined
@@ -1545,7 +1547,15 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         envMode: seedContext.envMode,
       });
     },
-    [defaultThreadEnvMode, handleNewThread, project.environmentId, project.id, router],
+    [
+      defaultThreadEnvMode,
+      handleNewThread,
+      isMobile,
+      project.environmentId,
+      project.id,
+      router,
+      setOpenMobile,
+    ],
   );
 
   const attemptArchiveThread = useCallback(

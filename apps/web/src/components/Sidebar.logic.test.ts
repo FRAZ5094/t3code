@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  closeMobileSidebarForNavigation,
   createThreadJumpHintVisibilityController,
   getVisibleSidebarThreadIds,
   resolveAdjacentThreadId,
@@ -201,6 +202,30 @@ describe("handleSidebarThreadNavigation", () => {
     expect(setSelectionAnchor).toHaveBeenCalledWith("environment-local:thread-desktop");
     expect(setOpenMobile).not.toHaveBeenCalled();
     expect(navigate).toHaveBeenCalledOnce();
+  });
+});
+
+describe("closeMobileSidebarForNavigation", () => {
+  it("closes the mobile sidebar for navigation actions", () => {
+    const setOpenMobile = vi.fn();
+
+    closeMobileSidebarForNavigation({
+      isMobile: true,
+      setOpenMobile,
+    });
+
+    expect(setOpenMobile).toHaveBeenCalledWith(false);
+  });
+
+  it("leaves the desktop sidebar open", () => {
+    const setOpenMobile = vi.fn();
+
+    closeMobileSidebarForNavigation({
+      isMobile: false,
+      setOpenMobile,
+    });
+
+    expect(setOpenMobile).not.toHaveBeenCalled();
   });
 });
 
