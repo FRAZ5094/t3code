@@ -35,12 +35,17 @@ function attachUtteranceSettledHandlers(
   utterance.onerror = onSettled;
 }
 
+function findLatestAssistantMessageIndex(messages: ReadonlyArray<ChatMessage>): number {
+  return messages.findLastIndex((message) => message.role === "assistant");
+}
+
 export function AutoReadRepliesController({
   enabled,
   threadId,
   messages,
 }: AutoReadRepliesControllerProps) {
   const messagesRef = useRef(messages);
+  const wasEnabledRef = useRef(enabled);
   const speechPrimedRef = useRef(false);
   const observedThreadIdRef = useRef<ThreadId | null>(null);
   const trackingStartIndexRef = useRef(0);
@@ -247,6 +252,9 @@ export function AutoReadRepliesController({
   });
 
   useEffect(() => {
+    const wasEnabled = wasEnabledRef.current;
+    wasEnabledRef.current = enabled;
+
     if (!enabled || !threadId) {
       resetTrackingWindow(messages.length, true);
       observedThreadIdRef.current = threadId;
@@ -268,6 +276,12 @@ export function AutoReadRepliesController({
         observedThreadIdRef.current !== null,
       );
       observedThreadIdRef.current = threadId;
+    } else if (!wasEnabled) {
+      const latestAssistantIndex = findLatestAssistantMessageIndex(messages);
+      resetTrackingWindow(
+        latestAssistantIndex === -1 ? messages.length : latestAssistantIndex,
+        false,
+      );
     }
 
     processTrackedMessages(messages);
