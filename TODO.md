@@ -7,6 +7,8 @@
 - [ ] Thread archiving
 - [ ] New projects should go on top
 - [ ] Projects should be sorted by latest thread update
+- [ ] Auto-read / TTS should skip reading raw links and URLs aloud
+- [ ] Add speech speed controls for auto-read / TTS with `1x` default and `1.5x`, `2x`, `3x` options
 
 ## Bigger things
 
