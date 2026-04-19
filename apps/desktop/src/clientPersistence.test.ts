@@ -53,6 +53,7 @@ const clientSettings: ClientSettings = {
   confirmThreadArchive: true,
   confirmThreadDelete: false,
   diffWordWrap: true,
+  speechPlaybackRate: "3x",
   sidebarProjectSortOrder: "manual",
   sidebarThreadSortOrder: "created_at",
   timestampFormat: "24-hour",

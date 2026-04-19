@@ -23,11 +23,18 @@ export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
 export const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
 
+export const SpeechPlaybackRate = Schema.Literals(["1x", "1.5x", "2x", "3x"]);
+export type SpeechPlaybackRate = typeof SpeechPlaybackRate.Type;
+export const DEFAULT_SPEECH_PLAYBACK_RATE: SpeechPlaybackRate = "1x";
+
 export const ClientSettingsSchema = Schema.Struct({
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   diffWordWrap: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   autoReadReplies: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  speechPlaybackRate: SpeechPlaybackRate.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SPEECH_PLAYBACK_RATE)),
+  ),
   sidebarProjectSortOrder: SidebarProjectSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_SORT_ORDER)),
   ),

@@ -17,6 +17,7 @@ import { page } from "vitest/browser";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
+import { CLIENT_SETTINGS_STORAGE_KEY } from "../../clientPersistenceStorage";
 import { __resetLocalApiForTests } from "../../localApi";
 import { AppAtomRegistryProvider } from "../../rpc/atomRegistry";
 import { resetServerStateForTests, setServerConfigSnapshot } from "../../rpc/serverState";
@@ -700,5 +701,27 @@ describe("GeneralSettingsPanel observability", () => {
     await openLogsButton.click();
 
     expect(openInEditor).toHaveBeenCalledWith("/repo/project/.t3/logs", "cursor");
+  });
+
+  it("persists speech settings from the general settings panel", async () => {
+    setServerConfigSnapshot(createBaseServerConfig());
+
+    mounted = await render(
+      <AppAtomRegistryProvider>
+        <GeneralSettingsPanel />
+      </AppAtomRegistryProvider>,
+    );
+
+    await page.getByLabelText("Auto-read replies in settings").click();
+    const speechSpeedSelect = page.getByRole("combobox", { name: "Speech speed" });
+    await speechSpeedSelect.click();
+    await page.getByText("3x").click();
+
+    await vi.waitFor(() => {
+      expect(JSON.parse(localStorage.getItem(CLIENT_SETTINGS_STORAGE_KEY) ?? "{}")).toMatchObject({
+        autoReadReplies: true,
+        speechPlaybackRate: "3x",
+      });
+    });
   });
 });

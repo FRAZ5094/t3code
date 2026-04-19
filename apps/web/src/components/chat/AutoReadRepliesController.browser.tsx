@@ -7,6 +7,7 @@ import type { ChatMessage } from "../../types";
 
 class MockSpeechSynthesisUtterance {
   readonly text: string;
+  rate = 1;
   private endListener: (() => void) | null = null;
   private errorListener: (() => void) | null = null;
 
@@ -59,6 +60,7 @@ class MockSpeechSynthesisUtterance {
 
 class LegacyMockSpeechSynthesisUtterance {
   readonly text: string;
+  rate = 1;
   onend: (() => void) | null = null;
   onerror: (() => void) | null = null;
 
@@ -712,6 +714,33 @@ describe("AutoReadRepliesController", () => {
         expect(speakSpy).toHaveBeenCalledTimes(2);
       });
       expect(spokenUtterances[1]?.text).toBe("Newer reply.");
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("applies the configured playback rate to spoken replies", async () => {
+    installSpeechSynthesisMocks();
+
+    const mounted = await mountController({
+      enabled: true,
+      playbackRate: "3x",
+      threadId: THREAD_ID,
+      messages: [
+        createAssistantMessage({
+          id: "message-fast",
+          text: "Fast reply.",
+          streaming: true,
+        }),
+      ],
+    });
+
+    try {
+      await vi.waitFor(() => {
+        expect(speakSpy).toHaveBeenCalledTimes(1);
+      });
+      expect(spokenUtterances[0]?.text).toBe("Fast reply.");
+      expect(spokenUtterances[0]?.rate).toBe(3);
     } finally {
       await mounted.cleanup();
     }

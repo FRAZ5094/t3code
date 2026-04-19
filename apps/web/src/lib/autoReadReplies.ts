@@ -112,7 +112,43 @@ function emitChunk(
 }
 
 function sanitizeSpeakableText(text: string): string {
-  return replaceMarkdownLinks(stripFencedCodeBlocks(text)).replaceAll("`", "").trim();
+  return normalizeSpeakableSpacing(
+    stripRawUrls(replaceMarkdownLinks(stripFencedCodeBlocks(text))).replaceAll("`", ""),
+  );
+}
+
+function stripRawUrls(text: string): string {
+  let result = "";
+  let cursor = 0;
+  const matcher = /(?:https?:\/\/|www\.)/gi;
+
+  for (;;) {
+    const match = matcher.exec(text);
+    if (!match) {
+      break;
+    }
+
+    const urlStart = match.index;
+    if (urlStart > 0 && isAlphaNumeric(text[urlStart - 1])) {
+      continue;
+    }
+
+    let urlEnd = urlStart + match[0].length;
+    while (urlEnd < text.length && !isRawUrlTerminator(text[urlEnd])) {
+      urlEnd += 1;
+    }
+
+    let punctuationStart = urlEnd;
+    while (punctuationStart > urlStart && isRawUrlTrailingPunctuation(text[punctuationStart - 1])) {
+      punctuationStart -= 1;
+    }
+
+    result += text.slice(cursor, urlStart);
+    result += text.slice(punctuationStart, urlEnd);
+    cursor = urlEnd;
+  }
+
+  return result + text.slice(cursor);
 }
 
 function replaceMarkdownLinks(text: string): string {
@@ -236,6 +272,30 @@ function findMarkdownLinkDestinationEnd(text: string, startOffset: number): numb
   }
 
   return null;
+}
+
+function normalizeSpeakableSpacing(text: string): string {
+  return text
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([,.;!?])/g, "$1")
+    .replace(/\(\s*\)/g, "")
+    .replace(/\[\s*\]/g, "")
+    .replace(/\{\s*\}/g, "")
+    .trim();
+}
+
+function isAlphaNumeric(char: string | undefined): boolean {
+  return char != null && /[0-9A-Za-z]/.test(char);
+}
+
+function isRawUrlTerminator(char: string | undefined): boolean {
+  return char == null || /\s/.test(char);
+}
+
+function isRawUrlTrailingPunctuation(char: string | undefined): boolean {
+  return char != null && /[),.<>!?;:'"\]}]/.test(char);
 }
 
 function stripFencedCodeBlocks(text: string): string {
