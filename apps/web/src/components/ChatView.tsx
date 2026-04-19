@@ -21,6 +21,7 @@ import {
   RuntimeMode,
   TerminalOpenInput,
 } from "@t3tools/contracts";
+import { type SpeechPlaybackRate } from "@t3tools/contracts/settings";
 import {
   parseScopedThreadKey,
   scopedThreadKey,
@@ -186,6 +187,7 @@ import {
   useServerKeybindings,
 } from "~/rpc/serverState";
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
+import { applySpeechPlaybackRate, hasSpeechSynthesisSupport } from "~/lib/speechSynthesis";
 import { retainThreadDetailSubscription } from "../environments/runtime/service";
 import { RightPanelSheet } from "./RightPanelSheet";
 import { Button } from "./ui/button";
@@ -209,16 +211,13 @@ type EnvironmentUnavailableState = {
   readonly connectionState: "connecting" | "disconnected" | "error";
 };
 
-function speakUserSendProbe(text: string): void {
-  if (
-    typeof window === "undefined" ||
-    typeof window.speechSynthesis?.speak !== "function" ||
-    typeof SpeechSynthesisUtterance !== "function"
-  ) {
+function speakUserSendProbe(text: string, playbackRate: SpeechPlaybackRate): void {
+  if (!hasSpeechSynthesisSupport()) {
     return;
   }
 
   const utterance = new SpeechSynthesisUtterance(text);
+  applySpeechPlaybackRate(utterance, playbackRate);
   window.setTimeout(() => {
     try {
       if (window.speechSynthesis.paused) {
@@ -2799,7 +2798,7 @@ export default function ChatView(props: ChatViewProps) {
       },
     ]);
     if (settings.autoReadReplies) {
-      speakUserSendProbe("Message sent.");
+      speakUserSendProbe("Message sent.", settings.speechPlaybackRate);
     }
 
     setThreadError(threadIdForSend, null);
@@ -3543,6 +3542,7 @@ export default function ChatView(props: ChatViewProps) {
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
       <AutoReadRepliesController
         enabled={settings.autoReadReplies}
+        playbackRate={settings.speechPlaybackRate}
         threadId={activeThread.id}
         messages={activeThread.messages}
       />

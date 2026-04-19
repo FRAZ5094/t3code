@@ -408,6 +408,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.autoReadReplies !== DEFAULT_UNIFIED_SETTINGS.autoReadReplies
         ? ["Auto-read replies"]
         : []),
+      ...(settings.speechPlaybackRate !== DEFAULT_UNIFIED_SETTINGS.speechPlaybackRate
+        ? ["Speech speed"]
+        : []),
       ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
         ? ["Assistant output"]
         : []),
@@ -438,6 +441,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.defaultThreadEnvMode,
       settings.autoReadReplies,
       settings.diffIgnoreWhitespace,
+      settings.speechPlaybackRate,
       settings.diffWordWrap,
       settings.automaticGitFetchInterval,
       settings.enableAssistantStreaming,
@@ -464,6 +468,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       autoOpenPlanSidebar: DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar,
+      autoReadReplies: DEFAULT_UNIFIED_SETTINGS.autoReadReplies,
+      speechPlaybackRate: DEFAULT_UNIFIED_SETTINGS.speechPlaybackRate,
       enableAssistantStreaming: DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming,
       automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
       defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
@@ -643,6 +649,75 @@ export function GeneralSettingsPanel() {
               }
               aria-label="Hide whitespace changes by default"
             />
+          }
+        />
+
+        <SettingsRow
+          title="Auto-read replies"
+          description="Read assistant replies aloud as they stream in. You can still toggle this from the chat header."
+          resetAction={
+            settings.autoReadReplies !== DEFAULT_UNIFIED_SETTINGS.autoReadReplies ? (
+              <SettingResetButton
+                label="auto-read replies"
+                onClick={() =>
+                  updateSettings({
+                    autoReadReplies: DEFAULT_UNIFIED_SETTINGS.autoReadReplies,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.autoReadReplies}
+              onCheckedChange={(checked) => updateSettings({ autoReadReplies: Boolean(checked) })}
+              aria-label="Auto-read replies in settings"
+            />
+          }
+        />
+
+        <SettingsRow
+          title="Speech speed"
+          description="Used by auto-read replies and the Speak test phrase button."
+          resetAction={
+            settings.speechPlaybackRate !== DEFAULT_UNIFIED_SETTINGS.speechPlaybackRate ? (
+              <SettingResetButton
+                label="speech speed"
+                onClick={() =>
+                  updateSettings({
+                    speechPlaybackRate: DEFAULT_UNIFIED_SETTINGS.speechPlaybackRate,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.speechPlaybackRate}
+              onValueChange={(value) => {
+                if (value === "1x" || value === "1.5x" || value === "2x" || value === "3x") {
+                  updateSettings({ speechPlaybackRate: value });
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-40" aria-label="Speech speed">
+                <SelectValue>{settings.speechPlaybackRate}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="1x">
+                  1x
+                </SelectItem>
+                <SelectItem hideIndicator value="1.5x">
+                  1.5x
+                </SelectItem>
+                <SelectItem hideIndicator value="2x">
+                  2x
+                </SelectItem>
+                <SelectItem hideIndicator value="3x">
+                  3x
+                </SelectItem>
+              </SelectPopup>
+            </Select>
           }
         />
 

@@ -38,6 +38,9 @@ export const SidebarThreadPreviewCount = Schema.Int.check(
 );
 export type SidebarThreadPreviewCount = typeof SidebarThreadPreviewCount.Type;
 export const DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT: SidebarThreadPreviewCount = 6;
+export const SpeechPlaybackRate = Schema.Literals(["1x", "1.5x", "2x", "3x"]);
+export type SpeechPlaybackRate = typeof SpeechPlaybackRate.Type;
+export const DEFAULT_SPEECH_PLAYBACK_RATE: SpeechPlaybackRate = "1x";
 
 export const ClientSettingsSchema = Schema.Struct({
   autoOpenPlanSidebar: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
@@ -81,6 +84,9 @@ export const ClientSettingsSchema = Schema.Struct({
     SidebarProjectGroupingMode,
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   autoReadReplies: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  speechPlaybackRate: SpeechPlaybackRate.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SPEECH_PLAYBACK_RATE)),
+  ),
   sidebarProjectSortOrder: SidebarProjectSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_SORT_ORDER)),
   ),
@@ -507,6 +513,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarProjectGroupingOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),
   ),
+  speechPlaybackRate: Schema.optionalKey(SpeechPlaybackRate),
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),

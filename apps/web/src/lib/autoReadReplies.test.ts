@@ -235,4 +235,28 @@ describe("extractSpeakableChunks", () => {
       nextOffset: text.length,
     });
   });
+
+  it("skips standalone raw URLs entirely", () => {
+    const text = "Before link.\n\nhttps://example.com/docs?q=1\n\nAfter link.";
+
+    expect(
+      extractSpeakableChunks({
+        text,
+        startOffset: 0,
+        isComplete: true,
+      }),
+    ).toEqual({
+      chunks: [
+        {
+          text: "Before link.",
+          endOffset: text.indexOf("After link."),
+        },
+        {
+          text: "After link.",
+          endOffset: text.length,
+        },
+      ],
+      nextOffset: text.length,
+    });
+  });
 });

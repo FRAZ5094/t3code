@@ -53,6 +53,7 @@ const originalSpeechSynthesisDescriptor = Object.getOwnPropertyDescriptor(
 
 class MockSpeechSynthesisUtterance {
   readonly text: string;
+  rate = 1;
 
   constructor(text: string) {
     this.text = text;
@@ -187,6 +188,12 @@ describe("AutoReadRepliesToggle", () => {
 
   it("speaks a test phrase from the header button", async () => {
     installSpeechSynthesisMocks();
+    localStorage.setItem(
+      CLIENT_SETTINGS_STORAGE_KEY,
+      JSON.stringify({
+        speechPlaybackRate: "3x",
+      }),
+    );
 
     const mounted = await mountChatHeader();
 
@@ -197,6 +204,7 @@ describe("AutoReadRepliesToggle", () => {
         expect(speakSpy).toHaveBeenCalledTimes(1);
       });
       expect(speakSpy.mock.calls[0]?.[0]).toMatchObject({ text: "Speech test." });
+      expect(speakSpy.mock.calls[0]?.[0]).toMatchObject({ rate: 3 });
     } finally {
       await mounted.cleanup();
     }

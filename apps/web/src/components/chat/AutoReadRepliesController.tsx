@@ -1,24 +1,15 @@
-import type { ThreadId } from "@t3tools/contracts";
+import { type ThreadId } from "@t3tools/contracts";
+import { type SpeechPlaybackRate } from "@t3tools/contracts/settings";
 import { useEffect, useEffectEvent, useRef } from "react";
 import { extractSpeakableChunks, type SpeakableChunk } from "~/lib/autoReadReplies";
+import { applySpeechPlaybackRate, hasSpeechSynthesisSupport } from "~/lib/speechSynthesis";
 import type { ChatMessage } from "../../types";
 
 interface AutoReadRepliesControllerProps {
   enabled: boolean;
+  playbackRate?: SpeechPlaybackRate;
   threadId: ThreadId | null;
   messages: ReadonlyArray<ChatMessage>;
-}
-
-function hasSpeechSynthesisSupport(): boolean {
-  if (typeof window === "undefined") {
-    return false;
-  }
-
-  return (
-    typeof window.speechSynthesis?.speak === "function" &&
-    typeof window.speechSynthesis?.cancel === "function" &&
-    typeof SpeechSynthesisUtterance === "function"
-  );
 }
 
 function attachUtteranceSettledHandlers(
@@ -41,6 +32,7 @@ function findLatestAssistantMessageIndex(messages: ReadonlyArray<ChatMessage>): 
 
 export function AutoReadRepliesController({
   enabled,
+  playbackRate = "1x",
   threadId,
   messages,
 }: AutoReadRepliesControllerProps) {
@@ -75,7 +67,7 @@ export function AutoReadRepliesController({
       window.clearTimeout(speakTimeoutIdRef.current);
       speakTimeoutIdRef.current = null;
     }
-    if (cancelSpeech && hasSpeechSynthesisSupport()) {
+    if (cancelSpeech && hasSpeechSynthesisSupport({ requireCancel: true })) {
       window.speechSynthesis.cancel();
     }
 
@@ -149,7 +141,7 @@ export function AutoReadRepliesController({
   );
 
   const flushPendingChunks = useEffectEvent(() => {
-    if (!hasSpeechSynthesisSupport()) {
+    if (!hasSpeechSynthesisSupport({ requireCancel: true })) {
       return;
     }
 
@@ -165,6 +157,7 @@ export function AutoReadRepliesController({
     activeChunkRef.current = nextChunk;
     const speechGeneration = speechGenerationRef.current;
     const utterance = new SpeechSynthesisUtterance(nextChunk.chunk.text);
+    applySpeechPlaybackRate(utterance, playbackRate);
     speechPrimedRef.current = true;
     activeUtteranceRef.current = utterance;
     const handleSettled = () => {
@@ -193,7 +186,7 @@ export function AutoReadRepliesController({
   });
 
   const enqueueSpeakableChunks = useEffectEvent((message: ChatMessage) => {
-    if (!hasSpeechSynthesisSupport()) {
+    if (!hasSpeechSynthesisSupport({ requireCancel: true })) {
       return;
     }
 
@@ -261,7 +254,7 @@ export function AutoReadRepliesController({
       return;
     }
 
-    if (!hasSpeechSynthesisSupport()) {
+    if (!hasSpeechSynthesisSupport({ requireCancel: true })) {
       resetTrackingWindow(messages.length, false);
       return;
     }
@@ -285,15 +278,19 @@ export function AutoReadRepliesController({
     }
 
     processTrackedMessages(messages);
-  }, [enabled, messages, threadId]);
+  }, [enabled, messages, playbackRate, threadId]);
 
   useEffect(() => {
-    if (!enabled || !hasSpeechSynthesisSupport() || speechPrimedRef.current) {
+    if (
+      !enabled ||
+      !hasSpeechSynthesisSupport({ requireCancel: true }) ||
+      speechPrimedRef.current
+    ) {
       return;
     }
 
     const primeSpeechSynthesis = () => {
-      if (!hasSpeechSynthesisSupport() || speechPrimedRef.current) {
+      if (!hasSpeechSynthesisSupport({ requireCancel: true }) || speechPrimedRef.current) {
         return;
       }
 
@@ -325,7 +322,7 @@ export function AutoReadRepliesController({
 
   useEffect(
     () => () => {
-      if (hasSpeechSynthesisSupport()) {
+      if (hasSpeechSynthesisSupport({ requireCancel: true })) {
         window.speechSynthesis.cancel();
       }
       speechGenerationRef.current += 1;

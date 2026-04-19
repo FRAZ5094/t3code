@@ -1,20 +1,15 @@
 import { memo } from "react";
 import { Volume2Icon } from "lucide-react";
+import { useSettings } from "~/hooks/useSettings";
+import { applySpeechPlaybackRate, hasSpeechSynthesisSupport } from "~/lib/speechSynthesis";
 
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 const TEST_PHRASE = "Speech test.";
 
-function hasSpeechSynthesisSupport(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    typeof window.speechSynthesis?.speak === "function" &&
-    typeof SpeechSynthesisUtterance === "function"
-  );
-}
-
 export const SpeechTestButton = memo(function SpeechTestButton() {
+  const speechPlaybackRate = useSettings((settings) => settings.speechPlaybackRate);
   const speechSynthesisAvailable = hasSpeechSynthesisSupport();
 
   return (
@@ -33,6 +28,7 @@ export const SpeechTestButton = memo(function SpeechTestButton() {
               }
 
               const utterance = new SpeechSynthesisUtterance(TEST_PHRASE);
+              applySpeechPlaybackRate(utterance, speechPlaybackRate);
               window.speechSynthesis.speak(utterance);
             }}
           >
