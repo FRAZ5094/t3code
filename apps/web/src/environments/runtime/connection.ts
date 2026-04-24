@@ -1,6 +1,5 @@
 import type {
   EnvironmentId,
-  OrchestrationReadModel,
   OrchestrationShellSnapshot,
   OrchestrationShellStreamEvent,
   ServerConfig,
@@ -37,7 +36,7 @@ interface EnvironmentConnectionInput extends OrchestrationHandlers {
   readonly kind: "primary" | "saved";
   readonly knownEnvironment: KnownEnvironment;
   readonly client: WsRpcClient;
-  readonly loadSnapshot?: () => Promise<OrchestrationShellSnapshot | OrchestrationReadModel>;
+  readonly loadSnapshot?: () => Promise<OrchestrationShellSnapshot>;
   readonly refreshMetadata?: () => Promise<void>;
   readonly onConfigSnapshot?: (config: ServerConfig) => void;
   readonly onWelcome?: (payload: ServerLifecycleWelcomePayload) => void;

@@ -178,8 +178,8 @@ describe("createEnvironmentConnection", () => {
 
   it("uses an explicit snapshot loader when provided", async () => {
     const environmentId = EnvironmentId.make("env-1");
-    const { client, getSnapshot } = createTestClient();
-    const syncSnapshot = vi.fn();
+    const { client } = createTestClient();
+    const syncShellSnapshot = vi.fn();
     const loadSnapshot = vi.fn(
       async () =>
         ({
@@ -204,8 +204,8 @@ describe("createEnvironmentConnection", () => {
       },
       client,
       loadSnapshot,
-      applyEventBatch: vi.fn(),
-      syncSnapshot,
+      applyShellEvent: vi.fn(),
+      syncShellSnapshot,
       applyTerminalEvent: vi.fn(),
     });
 
@@ -213,8 +213,7 @@ describe("createEnvironmentConnection", () => {
     await Promise.resolve();
 
     expect(loadSnapshot).toHaveBeenCalledTimes(1);
-    expect(getSnapshot).not.toHaveBeenCalled();
-    expect(syncSnapshot).toHaveBeenCalledWith(
+    expect(syncShellSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({ snapshotSequence: 2 }),
       environmentId,
     );

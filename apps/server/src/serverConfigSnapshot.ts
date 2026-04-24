@@ -1,13 +1,13 @@
 import type { ServerConfig as ServerConfigPayload } from "@t3tools/contracts";
 import { Effect } from "effect";
 
-import { ServerConfig } from "./config";
-import { Keybindings } from "./keybindings";
-import { resolveAvailableEditors } from "./open";
-import { ProviderRegistry } from "./provider/Services/ProviderRegistry";
-import { ServerSettingsService } from "./serverSettings";
-import { ServerEnvironment } from "./environment/Services/ServerEnvironment";
-import { ServerAuth } from "./auth/Services/ServerAuth";
+import { ServerConfig } from "./config.ts";
+import { Keybindings } from "./keybindings.ts";
+import { resolveAvailableEditors } from "./open.ts";
+import { ProviderRegistry } from "./provider/Services/ProviderRegistry.ts";
+import { ServerSettingsService } from "./serverSettings.ts";
+import { ServerEnvironment } from "./environment/Services/ServerEnvironment.ts";
+import { ServerAuth } from "./auth/Services/ServerAuth.ts";
 
 export const loadServerConfigSnapshot = Effect.gen(function* () {
   const keybindings = yield* Keybindings;

@@ -17,10 +17,14 @@ const savedRegistryRecord: PersistedSavedEnvironmentRecord = {
 };
 
 const clientSettings: ClientSettings = {
+  autoOpenPlanSidebar: false,
   autoReadReplies: true,
   confirmThreadArchive: true,
   confirmThreadDelete: false,
   diffWordWrap: true,
+  favorites: [],
+  sidebarProjectGroupingMode: "repository_path",
+  sidebarProjectGroupingOverrides: {},
   speechPlaybackRate: "3x",
   sidebarProjectSortOrder: "manual",
   sidebarThreadSortOrder: "created_at",

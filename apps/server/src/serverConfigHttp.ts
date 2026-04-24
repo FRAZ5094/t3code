@@ -1,9 +1,9 @@
 import { Effect } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 
-import { respondToAuthError } from "./auth/http";
-import { ServerAuth } from "./auth/Services/ServerAuth";
-import { loadServerConfigSnapshot } from "./serverConfigSnapshot";
+import { respondToAuthError } from "./auth/http.ts";
+import { ServerAuth } from "./auth/Services/ServerAuth.ts";
+import { loadServerConfigSnapshot } from "./serverConfigSnapshot.ts";
 
 export const serverConfigRouteLayer = HttpRouter.add(
   "GET",

@@ -474,6 +474,7 @@ export function useSettingsRestore(onRestored?: () => void) {
         : []),
       ...(settings.autoOpenPlanSidebar !== DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar
         ? ["Task sidebar"]
+        : []),
       ...(settings.autoReadReplies !== DEFAULT_UNIFIED_SETTINGS.autoReadReplies
         ? ["Auto-read replies"]
         : []),

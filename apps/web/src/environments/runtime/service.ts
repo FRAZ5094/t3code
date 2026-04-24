@@ -2,6 +2,7 @@ import {
   type AuthSessionRole,
   type EnvironmentId,
   type OrchestrationEvent,
+  type OrchestrationReadModel,
   type OrchestrationShellSnapshot,
   type OrchestrationShellStreamEvent,
   type ServerConfig,
@@ -791,14 +792,41 @@ function createEnvironmentConnectionHandlers() {
   };
 }
 
-async function fetchPrimaryOrchestrationSnapshot(): Promise<OrchestrationReadModel> {
+async function fetchPrimaryOrchestrationSnapshot(): Promise<OrchestrationShellSnapshot> {
   const response = await fetch(resolvePrimaryEnvironmentHttpUrl("/api/orchestration/snapshot"), {
     credentials: "include",
   });
   if (!response.ok) {
     throw new Error(`Failed to load orchestration snapshot (${response.status}).`);
   }
-  return (await response.json()) as OrchestrationReadModel;
+
+  const snapshot = (await response.json()) as OrchestrationReadModel;
+  return {
+    snapshotSequence: snapshot.snapshotSequence,
+    updatedAt: snapshot.updatedAt,
+    projects: snapshot.projects,
+    threads: snapshot.threads.map((thread) => ({
+      id: thread.id,
+      projectId: thread.projectId,
+      title: thread.title,
+      modelSelection: thread.modelSelection,
+      runtimeMode: thread.runtimeMode,
+      interactionMode: thread.interactionMode,
+      branch: thread.branch,
+      worktreePath: thread.worktreePath,
+      latestTurn: thread.latestTurn,
+      createdAt: thread.createdAt,
+      updatedAt: thread.updatedAt,
+      archivedAt: thread.archivedAt,
+      session: thread.session,
+      latestUserMessageAt:
+        [...thread.messages].reverse().find((message) => message.role === "user")?.createdAt ??
+        null,
+      hasPendingApprovals: false,
+      hasPendingUserInput: false,
+      hasActionableProposedPlan: thread.proposedPlans.some((plan) => plan.implementedAt === null),
+    })),
+  };
 }
 
 function createPrimaryEnvironmentClient(
