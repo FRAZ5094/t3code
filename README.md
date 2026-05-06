@@ -48,6 +48,8 @@ We are not accepting contributions yet.
 
 Observability guide: [docs/observability.md](./docs/observability.md)
 
+Hosting from Android over Tailscale: [HOSTING_WITH_TAILSCALE.md](./HOSTING_WITH_TAILSCALE.md)
+
 ## If you REALLY want to contribute still.... read this first
 
 Before local development, prepare the environment and install dependencies:
