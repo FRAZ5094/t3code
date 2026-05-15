@@ -27,6 +27,8 @@ const clientSettings: ClientSettings = {
   autoReadReplies: true,
   confirmThreadArchive: true,
   confirmThreadDelete: false,
+  dismissedProviderUpdateNotificationKeys: [],
+  diffIgnoreWhitespace: true,
   diffWordWrap: true,
   favorites: [],
   providerModelPreferences: {},
@@ -35,6 +37,7 @@ const clientSettings: ClientSettings = {
   speechPlaybackRate: "3x",
   sidebarProjectSortOrder: "manual",
   sidebarThreadSortOrder: "created_at",
+  sidebarThreadPreviewCount: 6,
   timestampFormat: "24-hour",
 };
 

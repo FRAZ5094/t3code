@@ -1,6 +1,6 @@
 import "../index.css";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
@@ -46,9 +46,11 @@ function setCollapsedTextSelection(root: HTMLElement, offset: number): void {
 function ControlledComposer(props: { onPromptChange: (prompt: string) => void }) {
   const [value, setValue] = useState("before after");
   const [cursor, setCursor] = useState("before ".length);
+  const editorRef = useRef(null);
 
   return (
     <ComposerPromptEditor
+      editorRef={editorRef}
       value={value}
       cursor={cursor}
       terminalContexts={[]}

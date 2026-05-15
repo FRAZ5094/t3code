@@ -1,5 +1,5 @@
 import type { ServerConfig as ServerConfigPayload } from "@t3tools/contracts";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 
 import { ServerAuth } from "./auth/Services/ServerAuth.ts";
 import { ServerConfig } from "./config.ts";
