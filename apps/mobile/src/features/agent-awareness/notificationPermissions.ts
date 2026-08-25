@@ -15,7 +15,7 @@ export class NotificationPermissionReadError extends Schema.TaggedErrorClass<Not
   },
 ) {
   override get message(): string {
-    return "Failed to read notification permissions on iOS.";
+    return "Failed to read mobile notification permissions.";
   }
 }
 
@@ -26,7 +26,7 @@ export class NotificationPermissionRequestError extends Schema.TaggedErrorClass<
   },
 ) {
   override get message(): string {
-    return "Failed to request notification permissions on iOS.";
+    return "Failed to request mobile notification permissions.";
   }
 }
 
@@ -34,7 +34,7 @@ export const requestAgentNotificationPermission: Effect.Effect<
   NotificationPermissionResult,
   NotificationPermissionReadError | NotificationPermissionRequestError
 > = Effect.gen(function* () {
-  if (Platform.OS !== "ios") {
+  if (Platform.OS !== "ios" && Platform.OS !== "android") {
     return { type: "unsupported" };
   }
 
@@ -52,13 +52,17 @@ export const requestAgentNotificationPermission: Effect.Effect<
 
   const requested = yield* Effect.tryPromise({
     try: () =>
-      Notifications.requestPermissionsAsync({
-        ios: {
-          allowAlert: true,
-          allowBadge: true,
-          allowSound: true,
-        },
-      }),
+      Notifications.requestPermissionsAsync(
+        Platform.OS === "ios"
+          ? {
+              ios: {
+                allowAlert: true,
+                allowBadge: true,
+                allowSound: true,
+              },
+            }
+          : { android: {} },
+      ),
     catch: (cause) => new NotificationPermissionRequestError({ cause }),
   });
   return requested.granted
