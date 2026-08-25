@@ -38,6 +38,7 @@ import {
   OrchestrationSearchThreadsError,
   OrchestrationGetTurnDiffError,
   ORCHESTRATION_WS_METHODS,
+  PushNotificationError,
   type ProjectId,
   type ProjectEntriesFailure,
   type ProjectFileFailure,
@@ -130,6 +131,7 @@ import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
+import * as PushNotificationService from "./notifications/PushNotificationService.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as AzureDevOpsCli from "./sourceControl/AzureDevOpsCli.ts";
@@ -599,6 +601,25 @@ const makeWsRpcLayer = (
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const usage = yield* UsageService.UsageService;
       const relayClient = yield* RelayClient.RelayClient;
+      const pushNotificationService = yield* Effect.serviceOption(
+        PushNotificationService.PushNotificationService,
+      );
+      const pushNotificationEffect = <A>(
+        operation: "register" | "unregister",
+        effect: (
+          service: PushNotificationService.PushNotificationService["Service"],
+        ) => Effect.Effect<A, PushNotificationError>,
+      ) =>
+        Option.match(pushNotificationService, {
+          onNone: () =>
+            Effect.fail(
+              new PushNotificationError({
+                operation,
+                reason: "Push notifications are unavailable on this server.",
+              }),
+            ),
+          onSome: effect,
+        });
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
           message: `The authenticated token is missing required scope: ${requiredScope}.`,
@@ -1269,6 +1290,16 @@ const makeWsRpcLayer = (
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
       return WsRpcGroup.of({
+        [WS_METHODS.notificationsRegister]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.notificationsRegister,
+            pushNotificationEffect("register", (service) => service.register(input)),
+          ),
+        [WS_METHODS.notificationsUnregister]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.notificationsUnregister,
+            pushNotificationEffect("unregister", (service) => service.unregister(input)),
+          ),
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.dispatchCommand,
