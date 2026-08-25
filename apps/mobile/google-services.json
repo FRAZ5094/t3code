@@ -1,0 +1,67 @@
+{
+  "project_info": {
+    "project_number": "985720312975",
+    "project_id": "t3-code-fraz5094",
+    "storage_bucket": "t3-code-fraz5094.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:985720312975:android:dd340a57b92978d16f8cfa",
+        "android_client_info": {
+          "package_name": "com.fraz5094.t3code"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCC6De_HTLNFCAB8zDqCav_3DqO6tTBjkk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:985720312975:android:efc144c9e3dae0dc6f8cfa",
+        "android_client_info": {
+          "package_name": "com.fraz5094.t3code.dev"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCC6De_HTLNFCAB8zDqCav_3DqO6tTBjkk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:985720312975:android:aa828fecfb95ca046f8cfa",
+        "android_client_info": {
+          "package_name": "com.fraz5094.t3code.preview"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCC6De_HTLNFCAB8zDqCav_3DqO6tTBjkk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

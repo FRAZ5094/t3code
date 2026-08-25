@@ -63,13 +63,17 @@ export const requestAgentNotificationPermission: Effect.Effect<
 
   const requested = yield* Effect.tryPromise({
     try: () =>
-      Notifications.requestPermissionsAsync({
-        ios: {
-          allowAlert: true,
-          allowBadge: true,
-          allowSound: true,
-        },
-      }),
+      Notifications.requestPermissionsAsync(
+        Platform.OS === "ios"
+          ? {
+              ios: {
+                allowAlert: true,
+                allowBadge: true,
+                allowSound: true,
+              },
+            }
+          : { android: {} },
+      ),
     catch: (cause) => new NotificationPermissionRequestError({ cause }),
   });
   return requested.granted

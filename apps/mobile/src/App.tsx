@@ -11,6 +11,7 @@ import { RegistryContext } from "@effect/atom-react";
 import { ThreadArrangementHost } from "./features/threads/ThreadArrangementSheet";
 import { ConfirmDialogHost } from "./components/ConfirmDialogHost";
 import { CloudAuthProvider } from "./features/cloud/CloudAuthProvider";
+import { AndroidPushRegistrationProvider } from "./features/agent-awareness/androidPushRegistration";
 import { prepareNativeShowcaseCapture } from "./features/showcase/nativeShowcaseScene";
 import { IncomingShareProvider } from "./features/sharing/IncomingShareProvider";
 import {
@@ -25,6 +26,7 @@ import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
 import { SubscriptionUsageCoordinator } from "./widgets/SubscriptionUsageCoordinator";
 
 import "../global.css";
+import "./features/agent-awareness/notificationSetup";
 
 if (process.env.EXPO_PUBLIC_SHOWCASE === "1") {
   prepareNativeShowcaseCapture();
@@ -86,9 +88,11 @@ function AppContent() {
                 header (glass buttons, title, materials) is forced light even when
                 the system is in dark mode. */}
             <View style={{ flex: 1 }}>
-              <IncomingShareProvider>
+              <AndroidPushRegistrationProvider>
+                <IncomingShareProvider>
                 <Navigation linking={appLinking} theme={navigationTheme} />
               </IncomingShareProvider>
+              </AndroidPushRegistrationProvider>
               <ConfirmDialogHost />
               <ThreadArrangementHost />
             </View>
