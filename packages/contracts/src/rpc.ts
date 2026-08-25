@@ -251,6 +251,12 @@ import {
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
+import {
+  PushNotificationError,
+  PushNotificationRegistrationInput,
+  PushNotificationRegistrationResult,
+  PushNotificationUnregistrationInput,
+} from "./notifications.ts";
 
 export const WS_METHODS = {
   // Project registry methods
@@ -362,6 +368,10 @@ export const WS_METHODS = {
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
   serverGetUsageSummary: "server.getUsageSummary",
   serverRefreshUsageRates: "server.refreshUsageRates",
+
+  // Device push notification methods
+  notificationsRegister: "notifications.register",
+  notificationsUnregister: "notifications.unregister",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -618,6 +628,18 @@ const WsServerSignalProcessRpc = Rpc.make(WS_METHODS.serverSignalProcess, {
   payload: ServerSignalProcessInput,
   success: ServerSignalProcessResult,
   error: EnvironmentAuthorizationError,
+});
+
+export const WsNotificationsRegisterRpc = Rpc.make(WS_METHODS.notificationsRegister, {
+  payload: PushNotificationRegistrationInput,
+  success: PushNotificationRegistrationResult,
+  error: Schema.Union([PushNotificationError, EnvironmentAuthorizationError]),
+});
+
+export const WsNotificationsUnregisterRpc = Rpc.make(WS_METHODS.notificationsUnregister, {
+  payload: PushNotificationUnregistrationInput,
+  success: Schema.Void,
+  error: Schema.Union([PushNotificationError, EnvironmentAuthorizationError]),
 });
 
 const WsCloudGetRelayClientStatusRpc = Rpc.make(WS_METHODS.cloudGetRelayClientStatus, {
@@ -1311,6 +1333,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerReportClientActivityRpc,
   WsServerReportHostPowerStateRpc,
   WsServerGetBackgroundPolicyRpc,
+  WsNotificationsRegisterRpc,
+  WsNotificationsUnregisterRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsPullRequestsListRpc,
