@@ -20,6 +20,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
+import { useAndroidPushRegistration } from "../agent-awareness/androidPushRegistration";
 import { supportsAgentAwarenessPush } from "../agent-awareness/capabilities";
 import { setLiveActivityUpdatesEnabled } from "../agent-awareness/liveActivityPreferences";
 import { requestAgentNotificationPermission } from "../agent-awareness/notificationPermissions";
@@ -65,12 +66,15 @@ type LiveActivityStatus = "checking" | "enabled" | "disabled" | "signed-out" | "
 // never read as enabled when the device cannot receive anything (e.g. the
 // registration request timed out).
 function useDeviceRegistered(): boolean {
+  const androidRegistration = useAndroidPushRegistration();
   const status = useSyncExternalStore(
     subscribeAgentAwarenessRegistrationStatus,
     getAgentAwarenessRegistrationStatus,
     () => "unknown" as const,
   );
-  return status === "registered";
+  return Platform.OS === "android"
+    ? androidRegistration.status === "registered"
+    : status === "registered";
 }
 
 export function SettingsRouteScreen() {
@@ -134,6 +138,8 @@ function LocalSettingsRouteScreen() {
           />
         </SettingsSection>
 
+        <LocalAndroidNotificationsSection />
+
         <GeneralSettingsSection />
 
         <SettingsSection title="Appearance">
@@ -147,6 +153,65 @@ function LocalSettingsRouteScreen() {
         <AppSettingsSection />
       </ScrollView>
     </View>
+  );
+}
+
+function LocalAndroidNotificationsSection() {
+  const androidPushRegistration = useAndroidPushRegistration();
+
+  if (Platform.OS !== "android") {
+    return null;
+  }
+
+  const enableNotifications = () => {
+    void androidPushRegistration
+      .requestPermission()
+      .then((result) => {
+        if (result.type === "granted") {
+          Alert.alert(
+            "Notifications enabled",
+            androidPushRegistration.status === "registered"
+              ? "Agent completion, approval, and failure notifications are enabled."
+              : "Permission was granted. Connect an environment to register this device.",
+          );
+        }
+      })
+      .catch((error: unknown) => {
+        Alert.alert(
+          "Notifications unavailable",
+          error instanceof Error ? error.message : "Could not request notification permission.",
+        );
+      });
+  };
+
+  return (
+    <SettingsSection title="Notifications">
+      <SettingsSwitchRow
+        icon="bell.badge"
+        label="Device Notifications"
+        subtitle={
+          androidPushRegistration.status === "unknown"
+            ? "Connect an environment to receive agent alerts"
+            : undefined
+        }
+        disabled={androidPushRegistration.status === "pending"}
+        value={androidPushRegistration.status === "registered"}
+        onValueChange={(enabled) => {
+          if (enabled) {
+            enableNotifications();
+            return;
+          }
+          Alert.alert(
+            "Disable notifications",
+            "Open Android Settings to disable notifications for T3 Code.",
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Open Settings", onPress: () => void Linking.openSettings() },
+            ],
+          );
+        }}
+      />
+    </SettingsSection>
   );
 }
 
@@ -164,6 +229,7 @@ function ConfiguredSettingsRouteScreen() {
   const { getToken, isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const { user } = useUser();
   const { savedConnectionsById } = useSavedRemoteConnections();
+  const androidPushRegistration = useAndroidPushRegistration();
   const [notificationStatus, setNotificationStatus] = useState<NotificationStatus>("checking");
   const [liveActivityStatus, setLiveActivityStatus] = useState<LiveActivityStatus>("checking");
   const deviceRegistered = useDeviceRegistered();
@@ -221,6 +287,48 @@ function ConfiguredSettingsRouteScreen() {
   }, [isLoaded, isSignedIn, preferencesResult]);
 
   const requestNotifications = useCallback(async () => {
+    if (Platform.OS === "android") {
+      try {
+        const result = await androidPushRegistration.requestPermission();
+        if (result.type === "granted") {
+          setNotificationStatus("enabled");
+          if (androidPushRegistration.status === "registered") {
+            Alert.alert(
+              "Notifications enabled",
+              "Agent completion, approval, and failure notifications are enabled.",
+            );
+          } else {
+            Alert.alert(
+              "Permission granted",
+              "Connect an environment to register this device for agent notifications.",
+            );
+          }
+        } else if (result.type === "unsupported") {
+          setNotificationStatus("unsupported");
+        } else {
+          setNotificationStatus("disabled");
+          Alert.alert(
+            "Notifications disabled",
+            result.canAskAgain
+              ? "Notifications were not enabled."
+              : "Notifications were denied for this app. Open Settings to enable them.",
+            result.canAskAgain
+              ? undefined
+              : [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Open Settings", onPress: () => void Linking.openSettings() },
+                ],
+          );
+        }
+      } catch (error) {
+        Alert.alert(
+          "Notifications unavailable",
+          error instanceof Error ? error.message : "Could not request notification permission.",
+        );
+      }
+      return;
+    }
+
     const result = await settleAsyncResult(() =>
       runtime.runPromiseExit(
         requestAgentNotificationPermission.pipe(
@@ -275,7 +383,7 @@ function ConfiguredSettingsRouteScreen() {
         { text: "Open Settings", onPress: () => void Linking.openSettings() },
       ],
     );
-  }, []);
+  }, [androidPushRegistration]);
 
   const promptSignIn = useCallback(() => {
     Alert.alert(
@@ -534,6 +642,7 @@ function ConfiguredSettingsRouteScreen() {
           />
           <SettingsSwitchRow
             disabled={
+              Platform.OS !== "ios" ||
               !agentAwarenessPlatform.supported ||
               !agentAwarenessPushAvailable ||
               !isLoaded ||
@@ -546,6 +655,7 @@ function ConfiguredSettingsRouteScreen() {
             // Same gate: a saved preference is meaningless until the device
             // registration the relay needs to push updates has succeeded.
             value={
+              Platform.OS === "ios" &&
               agentAwarenessPushAvailable &&
               (liveActivityStatus === "enabled" || liveActivityStatus === "linking") &&
               deviceRegistered
