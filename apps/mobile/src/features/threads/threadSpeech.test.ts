@@ -33,17 +33,37 @@ const streamingText =
   "The first assistant message is long enough to start speaking while the provider is still streaming more words.";
 
 describe("ThreadSpeechQueue", () => {
-  it("does not replay hydrated history", () => {
+  it("starts with only the latest message for an existing thread", () => {
     const { calls, engine } = makeEngine();
     const queue = new ThreadSpeechQueue(engine);
 
     queue.update(
-      [{ id: "history", text: "A previously completed message.", streaming: false }],
+      [
+        { id: "history", text: "A previously completed message.", streaming: false },
+        { id: "latest", text: "Only the latest message should be read.", streaming: false },
+      ],
       true,
       1,
+      { threadKey: "thread-a" },
     );
 
-    expect(calls).toHaveLength(0);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.text).toBe("Only the latest message should be read.");
+  });
+
+  it("starts with only the latest message when enabled after history hydration", () => {
+    const { calls, engine } = makeEngine();
+    const queue = new ThreadSpeechQueue(engine);
+    const messages = [
+      { id: "history", text: "A previously completed message.", streaming: false },
+      { id: "latest", text: "Only the latest message should be read.", streaming: false },
+    ];
+
+    queue.update(messages, false, 1, { threadKey: "thread-a" });
+    queue.update(messages, true, 1, { threadKey: "thread-a" });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.text).toBe("Only the latest message should be read.");
   });
 
   it("keeps later messages behind the currently streaming message", () => {
@@ -85,7 +105,7 @@ describe("ThreadSpeechQueue", () => {
     expect(calls[2]?.text).toBe("The second message must wait.");
   });
 
-  it("does not interrupt the current utterance when disabled", () => {
+  it("stops the current utterance immediately when disabled", () => {
     const { calls, engine } = makeEngine();
     const queue = new ThreadSpeechQueue(engine);
 
@@ -101,9 +121,41 @@ describe("ThreadSpeechQueue", () => {
     );
     queue.update([{ id: "first", text: `${streamingText} done.`, streaming: false }], false, 1);
 
-    expect(engine.stop).not.toHaveBeenCalled();
+    expect(engine.stop).toHaveBeenCalledTimes(1);
     finishLatest(calls);
     expect(calls).toHaveLength(1);
+  });
+
+  it("stops the old thread and starts only the latest message in the new thread", () => {
+    const { calls, engine } = makeEngine();
+    const queue = new ThreadSpeechQueue(engine);
+
+    queue.update(
+      [
+        { id: "old-a", text: "An older message from thread A.", streaming: false },
+        { id: "latest-a", text: "The latest message from thread A.", streaming: false },
+      ],
+      true,
+      1,
+      { threadKey: "thread-a" },
+    );
+    queue.update(
+      [
+        { id: "old-b", text: "An older message from thread B.", streaming: false },
+        { id: "latest-b", text: "The latest message from thread B.", streaming: false },
+      ],
+      true,
+      1,
+      { threadKey: "thread-b" },
+    );
+
+    expect(engine.stop).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.text).toBe("The latest message from thread A.");
+    expect(calls[1]?.text).toBe("The latest message from thread B.");
+
+    calls[0]?.options.onDone();
+    expect(calls).toHaveLength(2);
   });
 
   it("uses the latest selected speed for the next queued utterance", () => {

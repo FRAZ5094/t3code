@@ -21,7 +21,7 @@ export interface ThreadSpeechSpeakOptions {
 
 export interface ThreadSpeechEngine {
   readonly speak: (text: string, options: ThreadSpeechSpeakOptions) => void;
-  readonly stop: () => void;
+  readonly stop: () => void | Promise<void>;
 }
 
 interface MessageProgress {
@@ -33,6 +33,15 @@ interface MessageProgress {
 interface SpeechSegment {
   readonly messageId: string;
   readonly text: string;
+}
+
+interface CurrentSpeech {
+  readonly segment: SpeechSegment;
+  readonly token: number;
+}
+
+export interface ThreadSpeechUpdateOptions {
+  readonly threadKey?: string | null;
 }
 
 export function resolveThreadSpeechRate(value: unknown): ThreadSpeechRate {
@@ -94,10 +103,14 @@ function findChunkEnd(text: string, start: number, streaming: boolean): number |
 export class ThreadSpeechQueue {
   private readonly progressByMessageId = new Map<string, MessageProgress>();
   private readonly pending: SpeechSegment[] = [];
-  private current: SpeechSegment | null = null;
+  private current: CurrentSpeech | null = null;
   private enabled = false;
   private rate: ThreadSpeechRate = DEFAULT_THREAD_SPEECH_RATE;
   private hydrated = false;
+  private hasContextMessages = false;
+  private threadKey: string | null | undefined;
+  private nextSpeechToken = 0;
+  private stopPromise: Promise<void> | null = null;
   private disposed = false;
 
   constructor(private readonly engine: ThreadSpeechEngine) {}
@@ -106,6 +119,7 @@ export class ThreadSpeechQueue {
     messages: ReadonlyArray<ThreadSpeechMessage>,
     enabled: boolean,
     rate: ThreadSpeechRate,
+    options: ThreadSpeechUpdateOptions = {},
   ): void {
     if (this.disposed) {
       return;
@@ -113,46 +127,47 @@ export class ThreadSpeechQueue {
 
     this.rate = rate;
 
+    if (options.threadKey !== undefined && options.threadKey !== this.threadKey) {
+      this.hydrated = true;
+      this.threadKey = options.threadKey;
+      this.resetForContext();
+      this.enabled = enabled;
+      this.syncMessages(messages, enabled);
+      if (enabled) {
+        this.pump();
+      }
+      return;
+    }
+
     if (!this.hydrated) {
       this.hydrated = true;
       this.enabled = enabled;
-      for (const message of messages) {
-        this.progressByMessageId.set(message.id, {
-          text: message.text,
-          queuedLength: message.text.length,
-          streaming: message.streaming,
-        });
+      this.syncMessages(messages, enabled);
+      if (enabled) {
+        this.pump();
       }
       return;
-    }
-
-    this.enabled = enabled;
-    for (const message of messages) {
-      const previous = this.progressByMessageId.get(message.id);
-      if (!previous) {
-        this.progressByMessageId.set(message.id, {
-          text: message.text,
-          queuedLength: enabled ? 0 : message.text.length,
-          streaming: message.streaming,
-        });
-        continue;
-      }
-
-      previous.text = message.text;
-      previous.streaming = message.streaming;
-      previous.queuedLength = Math.min(previous.queuedLength, message.text.length);
     }
 
     if (!enabled) {
-      this.pending.length = 0;
-      for (const message of messages) {
-        const progress = this.progressByMessageId.get(message.id);
-        if (progress) {
-          progress.queuedLength = message.text.length;
-        }
+      if (this.enabled) {
+        this.enabled = false;
+        this.syncMessages(messages, false);
+        this.stopCurrentSpeech();
+      } else {
+        this.syncMessages(messages, false);
       }
       return;
     }
+
+    if (!this.enabled) {
+      this.enabled = true;
+      this.startFromLatest(messages);
+      this.pump();
+      return;
+    }
+
+    this.syncMessages(messages, true);
 
     // A later message cannot enter the queue while an earlier assistant
     // message is still streaming. This makes the queue order stable even if
@@ -179,9 +194,96 @@ export class ThreadSpeechQueue {
       return;
     }
     this.disposed = true;
+    this.stopCurrentSpeech();
+  }
+
+  private resetForContext(): void {
+    this.progressByMessageId.clear();
     this.pending.length = 0;
+    this.hasContextMessages = false;
+    this.stopCurrentSpeech();
+  }
+
+  private syncMessages(
+    messages: ReadonlyArray<ThreadSpeechMessage>,
+    queueNewMessages: boolean,
+  ): void {
+    if (!this.hasContextMessages && messages.length > 0) {
+      this.startFromLatest(messages, queueNewMessages);
+      return;
+    }
+
+    for (const message of messages) {
+      const previous = this.progressByMessageId.get(message.id);
+      if (!previous) {
+        this.progressByMessageId.set(message.id, {
+          text: message.text,
+          queuedLength: queueNewMessages ? 0 : message.text.length,
+          streaming: message.streaming,
+        });
+        continue;
+      }
+
+      previous.text = message.text;
+      previous.streaming = message.streaming;
+      previous.queuedLength = Math.min(previous.queuedLength, message.text.length);
+    }
+
+    this.hasContextMessages = messages.length > 0;
+  }
+
+  private startFromLatest(messages: ReadonlyArray<ThreadSpeechMessage>, queueLatest = true): void {
+    this.progressByMessageId.clear();
+    this.pending.length = 0;
+    const latestMessageId = messages.at(-1)?.id;
+
+    for (const message of messages) {
+      this.progressByMessageId.set(message.id, {
+        text: message.text,
+        queuedLength: message.id === latestMessageId && queueLatest ? 0 : message.text.length,
+        streaming: message.streaming,
+      });
+    }
+
+    this.hasContextMessages = messages.length > 0;
+
+    if (queueLatest && latestMessageId !== undefined) {
+      const latestProgress = this.progressByMessageId.get(latestMessageId);
+      if (latestProgress) {
+        this.queueAvailableText(latestProgress, latestMessageId);
+      }
+    }
+  }
+
+  private stopCurrentSpeech(): void {
+    this.pending.length = 0;
+    if (this.current === null) {
+      return;
+    }
+
     this.current = null;
-    this.engine.stop();
+    this.nextSpeechToken += 1;
+
+    let stopResult: void | Promise<void>;
+    try {
+      stopResult = this.engine.stop();
+    } catch {
+      return;
+    }
+
+    if (stopResult === undefined) {
+      return;
+    }
+
+    const stopPromise = Promise.resolve(stopResult).catch(() => undefined);
+    this.stopPromise = stopPromise;
+    void stopPromise.then(() => {
+      if (this.stopPromise !== stopPromise) {
+        return;
+      }
+      this.stopPromise = null;
+      this.pump();
+    });
   }
 
   private queueAvailableText(progress: MessageProgress, messageId: string): void {
@@ -201,7 +303,7 @@ export class ThreadSpeechQueue {
   }
 
   private pump(): void {
-    if (this.disposed || !this.enabled || this.current !== null) {
+    if (this.disposed || !this.enabled || this.current !== null || this.stopPromise !== null) {
       return;
     }
 
@@ -210,10 +312,15 @@ export class ThreadSpeechQueue {
       return;
     }
 
-    this.current = next;
+    const current: CurrentSpeech = {
+      segment: next,
+      token: this.nextSpeechToken + 1,
+    };
+    this.nextSpeechToken = current.token;
+    this.current = current;
     let finished = false;
     const finish = () => {
-      if (finished) {
+      if (finished || this.current !== current) {
         return;
       }
       finished = true;
@@ -222,7 +329,7 @@ export class ThreadSpeechQueue {
     };
 
     try {
-      this.engine.speak(next.text, {
+      this.engine.speak(current.segment.text, {
         rate: this.rate,
         onDone: finish,
         onError: finish,
