@@ -213,7 +213,10 @@ function ThreadRouteContent(
   }, [selectedThread, selectedThreadDetailState]);
   const { selectedThreadCwd } = useSelectedThreadWorktree();
   const composer = useThreadComposerState();
-  const threadSpeech = useThreadSpeech(composer.selectedThreadFeed);
+  const threadSpeech = useThreadSpeech(
+    composer.selectedThreadFeed,
+    selectedThread === null ? null : `${selectedThread.environmentId}:${selectedThread.id}`,
+  );
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
   const requests = useSelectedThreadRequests();
