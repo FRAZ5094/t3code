@@ -17,6 +17,8 @@ const PREFERENCES_FALLBACK_KEY = "t3code.preferences.fallback";
 
 export interface Preferences {
   readonly liveActivitiesEnabled?: boolean;
+  readonly readAloudEnabled?: boolean;
+  readonly readAloudRate?: number;
   readonly themeId?: MobileThemeId;
   readonly lightThemeId?: MobileThemeId;
   readonly darkThemeId?: MobileThemeId;
@@ -86,6 +88,8 @@ export class MobilePreferencesStore extends Context.Service<
 function sanitizePreferences(parsed: Preferences): Preferences {
   const preferences: {
     liveActivitiesEnabled?: boolean;
+    readAloudEnabled?: boolean;
+    readAloudRate?: number;
     themeId?: MobileThemeId;
     lightThemeId?: MobileThemeId;
     darkThemeId?: MobileThemeId;
@@ -107,6 +111,12 @@ function sanitizePreferences(parsed: Preferences): Preferences {
 
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
     preferences.liveActivitiesEnabled = parsed.liveActivitiesEnabled;
+  }
+  if (typeof parsed.readAloudEnabled === "boolean") {
+    preferences.readAloudEnabled = parsed.readAloudEnabled;
+  }
+  if (typeof parsed.readAloudRate === "number") {
+    preferences.readAloudRate = parsed.readAloudRate;
   }
   if (
     typeof parsed.themeId === "string" &&
