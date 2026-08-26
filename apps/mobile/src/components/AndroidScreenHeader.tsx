@@ -92,6 +92,7 @@ export function AndroidScreenHeader(props: {
             selected={action.selected}
             icon={action.icon}
             onPress={action.onPress}
+            selected={action.selected}
           />
         ))}
         {overflowActions.length > 0 ? (
