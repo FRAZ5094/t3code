@@ -62,6 +62,8 @@ import {
 } from "../terminal/terminalLaunchContext";
 import { terminalDebugLog } from "../terminal/terminalDebugLog";
 import { ThreadDetailScreen, type ThreadDetailScreenProps } from "./ThreadDetailScreen";
+import { ThreadSpeechSpeedMenu } from "./ThreadSpeechSpeedMenu";
+import { useThreadSpeech } from "./use-thread-speech";
 import {
   ThreadGitControls,
   useThreadGitCenterHeaderItems,
@@ -230,6 +232,7 @@ function ThreadRouteContent(
   }, [selectedThread, selectedThreadDetailState]);
   const { selectedThreadCwd } = useSelectedThreadWorktree();
   const composer = useThreadComposerState();
+  const threadSpeech = useThreadSpeech(composer.selectedThreadFeed);
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
   const requests = useSelectedThreadRequests();
@@ -707,6 +710,12 @@ function ThreadRouteContent(
     if (Platform.OS !== "android") return [];
 
     const actions: AndroidHeaderAction[] = [];
+    actions.push({
+      accessibilityLabel: threadSpeech.enabled ? "Disable read aloud" : "Enable read aloud",
+      icon: threadSpeech.enabled ? "speaker.wave.2" : "speaker.slash",
+      onPress: threadSpeech.toggle,
+      selected: threadSpeech.enabled,
+    });
     if (props.onReturnToThread) {
       actions.push({
         accessibilityLabel: "Return to chat",
@@ -750,6 +759,8 @@ function ThreadRouteContent(
     props.onReturnToThread,
     selectedThreadCwd,
     selectedThreadProject?.workspaceRoot,
+    threadSpeech.enabled,
+    threadSpeech.toggle,
   ]);
 
   const handleEditFailedCreation = useCallback(async () => {
@@ -970,6 +981,11 @@ function ThreadRouteContent(
           }
           actions={androidHeaderActions}
           hideBottomBorder={materialYouStyleLayoutActive}
+          trailing={
+            threadSpeech.enabled ? (
+              <ThreadSpeechSpeedMenu rate={threadSpeech.rate} onChange={threadSpeech.setRate} />
+            ) : null
+          }
         />
       ) : null}
 
