@@ -27,12 +27,15 @@ function createAndroidSpeechEngine(): ThreadSpeechEngine {
       });
     },
     stop() {
-      void Speech.stop();
+      return Speech.stop();
     },
   };
 }
 
-export function useThreadSpeech(feed: ReadonlyArray<ThreadFeedEntry>) {
+export function useThreadSpeech(
+  feed: ReadonlyArray<ThreadFeedEntry>,
+  threadKey: string | null = null,
+) {
   const isAndroid = Platform.OS === "android";
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
@@ -94,8 +97,8 @@ export function useThreadSpeech(feed: ReadonlyArray<ThreadFeedEntry>) {
   );
 
   useEffect(() => {
-    queueRef.current?.update(assistantMessages, enabled, rate);
-  }, [assistantMessages, enabled, rate]);
+    queueRef.current?.update(assistantMessages, enabled, rate, { threadKey });
+  }, [assistantMessages, enabled, rate, threadKey]);
 
   const toggle = useCallback(() => {
     if (!isAndroid) {
@@ -104,9 +107,10 @@ export function useThreadSpeech(feed: ReadonlyArray<ThreadFeedEntry>) {
     preferenceInitializedRef.current = true;
     const next = !enabledRef.current;
     enabledRef.current = next;
+    queueRef.current?.update(assistantMessages, next, rate, { threadKey });
     setEnabled(next);
     savePreferences({ readAloudEnabled: next });
-  }, [isAndroid, savePreferences]);
+  }, [assistantMessages, isAndroid, rate, savePreferences, threadKey]);
 
   const setSpeechRate = useCallback(
     (next: ThreadSpeechRate) => {
