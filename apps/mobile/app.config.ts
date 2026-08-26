@@ -84,9 +84,9 @@ const VARIANT_CONFIG = {
   },
   production: {
     appName: "T3 Code",
-    scheme: "t3code-fraz5094",
+    scheme: "t3code",
     iosBundleIdentifier: "com.t3tools.t3code",
-    androidPackage: "com.fraz5094.t3code",
+    androidPackage: "com.t3tools.t3code",
     relyingParty: "clerk.t3.codes",
     assets: RELEASE_ASSETS,
   },
