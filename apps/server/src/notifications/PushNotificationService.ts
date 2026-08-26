@@ -1,5 +1,6 @@
 import type {
   EnvironmentId,
+  MessageId,
   OrchestrationEvent,
   PushNotificationRegistrationInput,
   PushNotificationRegistrationResult,
@@ -24,10 +25,17 @@ import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import { ProjectionThreadMessageRepository } from "../persistence/Services/ProjectionThreadMessages.ts";
+import { ProjectionThreadMessageRepositoryLive } from "../persistence/Layers/ProjectionThreadMessages.ts";
 import { eventThreadId, shouldPublishAgentAwarenessEvent } from "../relay/AgentAwarenessRelay.ts";
 import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { forkParked } from "../serverActivation.ts";
+import {
+  buildPushNotificationContent,
+  type PushNotificationApprovalContext,
+  type PushNotificationPhase,
+} from "./PushNotificationContent.ts";
 
 const PUSH_REGISTRATIONS_SECRET = "push-notification-registrations";
 const EXPO_PUSH_API_URL = "https://exp.host/--/api/v2/push/send";
@@ -89,29 +97,9 @@ function pushStateIdentity(state: AgentAwarenessState | null): string {
   return state?.phase ?? "none";
 }
 
-function notificationTitle(phase: "approval" | "completion" | "failure"): string {
-  switch (phase) {
-    case "approval":
-      return "Approval needed";
-    case "completion":
-      return "Agent finished";
-    case "failure":
-      return "Agent failed";
-  }
-}
-
-function notificationBody(state: AgentAwarenessState): string {
-  const threadTitle = state.threadTitle.trim();
-  const projectTitle = state.projectTitle.trim();
-  if (threadTitle && projectTitle) {
-    return `${threadTitle} · ${projectTitle}`;
-  }
-  return threadTitle || projectTitle || "An agent needs your attention.";
-}
-
 function shouldDeliverToPreferences(
   preferences: PushNotificationPreferences,
-  phase: "approval" | "completion" | "failure",
+  phase: PushNotificationPhase,
 ): boolean {
   if (!preferences.notificationsEnabled) {
     return false;
@@ -126,16 +114,47 @@ function shouldDeliverToPreferences(
   }
 }
 
+function approvalContextFromEvent(
+  event: OrchestrationEvent,
+): PushNotificationApprovalContext | null {
+  if (event.type !== "thread.activity-appended") {
+    return null;
+  }
+  const activity = event.payload.activity;
+  if (activity.kind !== "approval.requested") {
+    return null;
+  }
+  const payload =
+    typeof activity.payload === "object" && activity.payload !== null
+      ? (activity.payload as Record<string, unknown>)
+      : null;
+  return {
+    summary: activity.summary,
+    ...(typeof payload?.detail === "string" ? { detail: payload.detail } : {}),
+    ...(typeof payload?.appName === "string" ? { appName: payload.appName } : {}),
+  };
+}
+
 function expoPushMessage(input: {
   readonly environmentId: EnvironmentId;
   readonly state: AgentAwarenessState;
-  readonly phase: "approval" | "completion" | "failure";
+  readonly phase: PushNotificationPhase;
   readonly expoPushToken: string;
+  readonly approvalContext: PushNotificationApprovalContext | null;
+  readonly assistantMessageText: string | null;
 }) {
+  const content = buildPushNotificationContent({
+    phase: input.phase,
+    threadTitle: input.state.threadTitle,
+    projectTitle: input.state.projectTitle,
+    detail: input.state.detail,
+    approvalContext: input.approvalContext,
+    assistantMessageText: input.assistantMessageText,
+  });
   return {
     to: input.expoPushToken,
-    title: notificationTitle(input.phase),
-    body: notificationBody(input.state),
+    title: content.title,
+    body: content.body,
     priority: "high" as const,
     channelId: "agent-awareness",
     data: {
@@ -193,6 +212,7 @@ export const make = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
   const snapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+  const projectionThreadMessageRepository = yield* ProjectionThreadMessageRepository;
   const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
   const registrationsRef = yield* Ref.make(new Map<string, StoredPushRegistration>());
 
@@ -265,21 +285,49 @@ export const make = Effect.gen(function* () {
       if (Option.isNone(project)) {
         return null;
       }
-      return projectThreadAwareness({
+      const state = projectThreadAwareness({
         environmentId: yield* serverEnvironment.getEnvironmentId,
         project: project.value,
         thread: thread.value,
       });
+      return state === null
+        ? null
+        : {
+            state,
+            assistantMessageId: thread.value.latestTurn?.assistantMessageId ?? null,
+          };
     });
 
-  const sendForState = (state: AgentAwarenessState) =>
+  const readAssistantMessageText = (messageId: MessageId | null) =>
+    messageId === null
+      ? Effect.succeed(null)
+      : projectionThreadMessageRepository
+          .getByMessageId({ messageId })
+          .pipe(
+            Effect.map((message) =>
+              Option.isSome(message) && message.value.role === "assistant"
+                ? message.value.text
+                : null,
+            ),
+            Effect.orElseSucceed(() => null),
+          );
+
+  const sendForState = (input: {
+    readonly state: AgentAwarenessState;
+    readonly assistantMessageId: MessageId | null;
+    readonly approvalContext: PushNotificationApprovalContext | null;
+  }) =>
     Effect.gen(function* () {
-      const phase = notifiablePhase(state.phase);
+      const phase = notifiablePhase(input.state.phase);
       if (phase === null) {
         return;
       }
       const environmentId = yield* serverEnvironment.getEnvironmentId;
       const registrations = yield* Ref.get(registrationsRef);
+      const assistantMessageText =
+        phase === "completion"
+          ? yield* readAssistantMessageText(input.assistantMessageId)
+          : null;
       yield* Effect.forEach(
         [...registrations.values()].filter((registration) =>
           shouldDeliverToPreferences(registration.preferences, phase),
@@ -288,9 +336,11 @@ export const make = Effect.gen(function* () {
           sendExpoPushMessage(
             expoPushMessage({
               environmentId,
-              state,
+              state: input.state,
               phase,
               expoPushToken: registration.expoPushToken,
+              approvalContext: input.approvalContext,
+              assistantMessageText,
             }),
           ).pipe(
             Effect.tapError((error) =>
@@ -307,20 +357,22 @@ export const make = Effect.gen(function* () {
     });
 
   const stateByThread = new Map<ThreadId, string>();
-  const processThread = Effect.fn("PushNotificationService.processThread")(function* (
-    threadId: ThreadId,
-  ) {
-    const state = yield* readThreadState(threadId);
-    const previousIdentity = stateByThread.get(threadId);
-    const identity = pushStateIdentity(state);
-    stateByThread.set(threadId, identity);
-    if (previousIdentity === undefined || previousIdentity === identity || state === null) {
+  const processThread = Effect.fn("PushNotificationService.processThread")(function* (input: {
+    readonly threadId: ThreadId;
+    readonly approvalContext: PushNotificationApprovalContext | null;
+  }) {
+    const stateContext = yield* readThreadState(input.threadId);
+    const previousIdentity = stateByThread.get(input.threadId);
+    const identity = pushStateIdentity(stateContext?.state ?? null);
+    stateByThread.set(input.threadId, identity);
+    if (previousIdentity === undefined || previousIdentity === identity || stateContext === null) {
       return;
     }
+    const state = stateContext.state;
     if (notifiablePhase(state.phase) === null) {
       return;
     }
-    yield* sendForState(state);
+    yield* sendForState({ ...stateContext, approvalContext: input.approvalContext });
   });
 
   const seedState = Effect.gen(function* () {
@@ -350,7 +402,7 @@ export const make = Effect.gen(function* () {
         if (threadId === null || !shouldPublishAgentAwarenessEvent(event)) {
           return Effect.void;
         }
-        return worker.enqueue(threadId);
+        return worker.enqueue({ threadId, approvalContext: approvalContextFromEvent(event) });
       }),
     );
   });
@@ -358,4 +410,6 @@ export const make = Effect.gen(function* () {
   return PushNotificationService.of({ register, unregister, start });
 });
 
-export const layer = Layer.effect(PushNotificationService, make);
+export const layer = Layer.effect(PushNotificationService, make).pipe(
+  Layer.provideMerge(ProjectionThreadMessageRepositoryLive),
+);
