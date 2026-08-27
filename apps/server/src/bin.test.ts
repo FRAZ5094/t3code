@@ -107,6 +107,7 @@ const makeCliTestServerConfig = (baseDir: string) =>
       otlpMetricsExport: DEFAULT_SIGNAL_EXPORT,
       otlpLogsExport: DEFAULT_SIGNAL_EXPORT,
       otelEnvironment: OtelEnvironment.none,
+      prometheusMetricsEnabled: false,
       mode: "web",
       port: 0,
       host: "127.0.0.1",

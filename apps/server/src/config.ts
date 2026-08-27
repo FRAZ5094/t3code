@@ -82,6 +82,7 @@ export class ServerConfig extends Context.Service<
     readonly otlpMetricsExport: SignalExport;
     readonly otlpLogsExport: SignalExport;
     readonly otelEnvironment: OtelEnvironment.OtelEnvironment;
+    readonly prometheusMetricsEnabled: boolean;
     readonly mode: RuntimeMode;
     readonly port: number;
     readonly host: string | undefined;
@@ -221,6 +222,7 @@ const makeTest = Effect.fn("ServerConfig.makeTest")(function* (
     otlpMetricsExport: DEFAULT_SIGNAL_EXPORT,
     otlpLogsExport: DEFAULT_SIGNAL_EXPORT,
     otelEnvironment: OtelEnvironment.none,
+    prometheusMetricsEnabled: false,
     cwd,
     baseDir,
     ...derivedPaths,

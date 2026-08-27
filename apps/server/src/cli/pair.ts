@@ -327,6 +327,7 @@ const makePairServerConfig = Effect.fn(function* (input: {
     otlpMetricsExport: DEFAULT_SIGNAL_EXPORT,
     otlpLogsExport: DEFAULT_SIGNAL_EXPORT,
     otelEnvironment: OtelEnvironment.none,
+    prometheusMetricsEnabled: false,
     mode: "web",
     port: state.port,
     host: state.host,

@@ -111,6 +111,9 @@ const EnvServerConfig = Config.all({
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
+  prometheusMetricsEnabled: Config.Boolean("T3CODE_PROMETHEUS_METRICS_ENABLED").pipe(
+    Config.withDefault(false),
+  ),
   otlpExportIntervalMs: Config.Int("T3CODE_OTLP_EXPORT_INTERVAL_MS").pipe(
     Config.withDefault(10_000),
   ),
@@ -437,6 +440,7 @@ export const resolveServerConfig = (
       otlpMetricsExport: metrics?.export ?? signalExport,
       otlpLogsExport: logs?.export ?? signalExport,
       otelEnvironment: otel,
+      prometheusMetricsEnabled: env.prometheusMetricsEnabled,
       mode,
       port,
       cwd,

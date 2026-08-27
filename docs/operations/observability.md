@@ -82,10 +82,16 @@ minutes. The rate is per minute between the first and last span end.
 Metrics are not written to a local file.
 
 - local persistence: none
-- remote export: OTLP only, when configured
+- pull export: Prometheus text format at `/metrics`, when enabled
+- push export: OTLP, when configured
 - current definitions: `apps/server/src/observability/Metrics.ts`
 
-If OTLP is not configured, metrics still exist in-process, but you will not have a local artifact to inspect.
+If neither exporter is configured, metrics still exist in-process, but you will not have a local
+artifact to inspect.
+
+Enable the Prometheus route with `T3CODE_PROMETHEUS_METRICS_ENABLED=true`. It is served on the same
+host and port as T3 Code and is intentionally unauthenticated for standard Prometheus scraping, so
+only expose it through a trusted interface or private network.
 
 ### Event Loop Stalls
 
@@ -567,6 +573,7 @@ It provides:
 - optional OTLP trace exporter
 - optional OTLP metrics exporter
 - optional OTLP log exporter
+- optional Prometheus scrape endpoint
 - Effect trace-level and timing refs
 
 The desktop main process is a second producer, assembled in
@@ -635,6 +642,10 @@ Values are case-insensitive and trimmed. An unrecognized value is ignored with a
 just that signal, overriding an OTEL endpoint and the Settings endpoint. A `T3CODE_OTLP_*_URL` still
 wins for its signal. `otlp` is the default, and any other exporter name, such as `console` or
 `prometheus`, is ignored with a startup warning.
+Prometheus export:
+
+- `T3CODE_PROMETHEUS_METRICS_ENABLED`: expose `GET /metrics`, default `false`
+
 
 ### What Is Instrumented Today
 
@@ -648,6 +659,9 @@ Current high-value span and metric boundaries include:
 - provider session and turn operations
 - git command execution and git hook events
 - terminal session lifecycle
+- current projects, threads, referenced worktrees, provider sessions, active turns, and waiting turns
+- T3 process counts and CPU usage by resource-telemetry category
+- native resource-monitor health, sample age, restart count, and thermal state
 - sqlite query execution
 - event loop stalls (`server.eventLoop.stall`)
 

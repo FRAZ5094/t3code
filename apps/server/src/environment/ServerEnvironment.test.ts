@@ -60,6 +60,7 @@ const makeServerConfig = Effect.fn(function* (baseDir: string) {
     otlpMetricsExport: DEFAULT_SIGNAL_EXPORT,
     otlpLogsExport: DEFAULT_SIGNAL_EXPORT,
     otelEnvironment: OtelEnvironment.none,
+    prometheusMetricsEnabled: false,
     cwd: process.cwd(),
     baseDir,
     mode: "web",
