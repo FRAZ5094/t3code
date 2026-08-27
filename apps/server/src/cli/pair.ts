@@ -320,6 +320,7 @@ const makePairServerConfig = Effect.fn(function* (input: {
     traceMaxFiles: 10,
     otlpTracesUrl: undefined,
     otlpMetricsUrl: undefined,
+    prometheusMetricsEnabled: false,
     otlpExportIntervalMs: 10_000,
     otlpServiceName: "t3-server",
     mode: "web",
