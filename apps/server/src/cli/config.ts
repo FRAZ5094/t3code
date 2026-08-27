@@ -94,6 +94,9 @@ const EnvServerConfig = Config.all({
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
+  prometheusMetricsEnabled: Config.boolean("T3CODE_PROMETHEUS_METRICS_ENABLED").pipe(
+    Config.withDefault(false),
+  ),
   otlpExportIntervalMs: Config.int("T3CODE_OTLP_EXPORT_INTERVAL_MS").pipe(
     Config.withDefault(10_000),
   ),
@@ -362,6 +365,7 @@ export const resolveServerConfig = (
         env.otlpMetricsUrl ??
         bootstrap?.otlpMetricsUrl ??
         persistedObservabilitySettings.otlpMetricsUrl,
+      prometheusMetricsEnabled: env.prometheusMetricsEnabled,
       otlpExportIntervalMs: env.otlpExportIntervalMs,
       otlpServiceName: env.otlpServiceName,
       mode,

@@ -60,10 +60,16 @@ request.
 Metrics are not written to a local file.
 
 - local persistence: none
-- remote export: OTLP only, when configured
+- pull export: Prometheus text format at `/metrics`, when enabled
+- push export: OTLP, when configured
 - current definitions: `apps/server/src/observability/Metrics.ts`
 
-If OTLP is not configured, metrics still exist in-process, but you will not have a local artifact to inspect.
+If neither exporter is configured, metrics still exist in-process, but you will not have a local
+artifact to inspect.
+
+Enable the Prometheus route with `T3CODE_PROMETHEUS_METRICS_ENABLED=true`. It is served on the same
+host and port as T3 Code and is intentionally unauthenticated for standard Prometheus scraping, so
+only expose it through a trusted interface or private network.
 
 ### Related Artifacts
 
@@ -509,6 +515,7 @@ It provides:
 - local NDJSON tracer
 - optional OTLP trace exporter
 - optional OTLP metrics exporter
+- optional Prometheus scrape endpoint
 - Effect trace-level and timing refs
 
 ### Env Vars
@@ -529,7 +536,12 @@ OTLP export:
 - `T3CODE_OTLP_EXPORT_INTERVAL_MS`: export interval, default `10000`
 - `T3CODE_OTLP_SERVICE_NAME`: service name, default `t3-server`
 
-If the OTLP URLs are unset, local tracing still works and metrics stay in-process only.
+Prometheus export:
+
+- `T3CODE_PROMETHEUS_METRICS_ENABLED`: expose `GET /metrics`, default `false`
+
+If the OTLP URLs are unset and the Prometheus endpoint is disabled, local tracing still works and
+metrics stay in-process only.
 
 ### What Is Instrumented Today
 
@@ -543,6 +555,9 @@ Current high-value span and metric boundaries include:
 - provider session and turn operations
 - git command execution and git hook events
 - terminal session lifecycle
+- current projects, threads, referenced worktrees, provider sessions, active turns, and waiting turns
+- T3 process counts and CPU usage by resource-telemetry category
+- native resource-monitor health, sample age, restart count, and thermal state
 - sqlite query execution
 
 ### Current Constraints

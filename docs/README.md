@@ -14,6 +14,7 @@
 - [Keeping app and server in sync](./user/updating.md)
 - [Source control integrations](./user/source-control.md)
 - [Background service (Linux)](./user/background-service.md)
+- [Prometheus metrics](./user/prometheus.md)
 - Providers: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [OpenCode](./user/providers-opencode.md)
 
 Mobile app: [apps/mobile/README.md](../apps/mobile/README.md)

@@ -74,6 +74,58 @@ export const terminalRestartsTotal = Metric.counter("t3_terminal_restarts_total"
   description: "Total terminal restart requests handled.",
 });
 
+export const projects = Metric.gauge("t3_projects", {
+  description: "Current active projects in the orchestration read model.",
+});
+
+export const threads = Metric.gauge("t3_threads", {
+  description: "Current active threads in the orchestration read model.",
+});
+
+export const worktreesActive = Metric.gauge("t3_worktrees_active", {
+  description: "Current distinct worktrees referenced by active threads.",
+});
+
+export const agentsRunning = Metric.gauge("t3_agents_running", {
+  description: "Current provider turns doing work across all providers.",
+});
+
+export const providerSessionsActive = Metric.gauge("t3_provider_sessions_active", {
+  description: "Current provider sessions by provider and status.",
+});
+
+export const providerTurnsActive = Metric.gauge("t3_provider_turns_active", {
+  description: "Current provider turns by provider.",
+});
+
+export const providerTurnsWaiting = Metric.gauge("t3_provider_turns_waiting", {
+  description: "Current provider turns waiting for user action by provider and reason.",
+});
+
+export const processCpuCores = Metric.gauge("t3_process_cpu_cores", {
+  description: "Current CPU consumed by T3 processes, where 1.0 is one logical CPU core.",
+});
+
+export const processes = Metric.gauge("t3_processes", {
+  description: "Current T3 process count by category.",
+});
+
+export const resourceMonitorUp = Metric.gauge("t3_resource_monitor_up", {
+  description: "Whether the native T3 resource monitor returned the current sample.",
+});
+
+export const resourceSampleAgeSeconds = Metric.gauge("t3_resource_sample_age_seconds", {
+  description: "Age of the latest T3 resource telemetry sample in seconds.",
+});
+
+export const resourceMonitorRestarts = Metric.gauge("t3_resource_monitor_restarts", {
+  description: "Current native T3 resource monitor restart count.",
+});
+
+export const hostThermalState = Metric.gauge("t3_host_thermal_state", {
+  description: "Current host thermal state as a one-hot gauge.",
+});
+
 export const metricAttributes = (
   attributes: Readonly<Record<string, unknown>>,
 ): ReadonlyArray<[string, string]> => Object.entries(compactMetricAttributes(attributes));

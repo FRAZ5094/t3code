@@ -133,6 +133,7 @@ import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
 import * as NativeAppIconResolver from "./assets/NativeAppIconResolver.ts";
+import { increment, rpcRequestsTotal } from "./observability/Metrics.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
@@ -544,6 +545,7 @@ const buildAppUnderTest = (options?: {
       traceMaxFiles: 10,
       otlpTracesUrl: undefined,
       otlpMetricsUrl: undefined,
+      prometheusMetricsEnabled: false,
       otlpExportIntervalMs: 10_000,
       otlpServiceName: "t3-server",
       mode: "desktop",
@@ -1611,6 +1613,79 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const response = yield* HttpClient.get("/");
       assert.equal(response.status, 200);
       assert.include(yield* response.text, "router-static-ok");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("serves Effect and runtime metrics from the opt-in Prometheus route", () =>
+    Effect.gen(function* () {
+      let shellThreads = [
+        makeDefaultOrchestrationThreadShell({
+          worktreePath: "/tmp/t3-worktree",
+          session: {
+            threadId: defaultThreadId,
+            status: "running",
+            providerName: "codex",
+            runtimeMode: "full-access",
+            activeTurnId: TurnId.make("turn-prometheus"),
+            lastError: null,
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+          hasPendingApprovals: true,
+        }),
+      ];
+      yield* buildAppUnderTest({
+        config: { prometheusMetricsEnabled: true },
+        layers: {
+          projectionSnapshotQuery: {
+            getShellSnapshot: () =>
+              Effect.succeed({
+                snapshotSequence: 1,
+                projects: [],
+                threads: shellThreads,
+                updatedAt: "2026-01-01T00:00:00.000Z",
+              }),
+          },
+        },
+      });
+      yield* increment(rpcRequestsTotal, { method: "test.prometheus", outcome: "success" });
+
+      const response = yield* HttpClient.get("/metrics");
+      const body = yield* response.text;
+
+      assert.equal(response.status, 200);
+      assert.equal(response.headers["content-type"], "text/plain; version=0.0.4; charset=utf-8");
+      assert.include(body, "# TYPE t3_rpc_requests_total counter");
+      assert.include(body, 't3_rpc_requests_total{method="test.prometheus",outcome="success"} 1');
+      assert.include(body, "t3_threads 1");
+      assert.include(body, "t3_worktrees_active 1");
+      assert.include(body, "t3_agents_running 1");
+      assert.include(body, 't3_provider_sessions_active{provider="codex",status="running"} 1');
+      assert.include(body, 't3_provider_turns_active{provider="codex"} 1');
+      assert.include(body, 't3_provider_turns_waiting{provider="codex",reason="approval"} 1');
+      assert.include(body, "t3_resource_monitor_up 0");
+
+      shellThreads = [];
+      const settledBody = yield* (yield* HttpClient.get("/metrics")).text;
+      assert.include(settledBody, "t3_agents_running 0");
+      assert.include(
+        settledBody,
+        't3_provider_sessions_active{provider="codex",status="running"} 0',
+      );
+      assert.include(settledBody, 't3_provider_turns_active{provider="codex"} 0');
+      assert.include(
+        settledBody,
+        't3_provider_turns_waiting{provider="codex",reason="approval"} 0',
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("does not expose Prometheus metrics by default", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const response = yield* HttpClient.get("/metrics");
+
+      assert.equal(response.status, 503);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

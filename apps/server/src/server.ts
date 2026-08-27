@@ -93,6 +93,7 @@ import * as SourceControlRateLimit from "./sourceControl/SourceControlRateLimit.
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import { ObservabilityLive } from "./observability/Layers/Observability.ts";
+import { prometheusMetricsRouteLayer } from "./observability/PrometheusRoute.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import { authHttpApiLayer, environmentAuthenticatedAuthLayer } from "./auth/http.ts";
@@ -532,6 +533,7 @@ export const makeRoutesLayer = Layer.mergeAll(
     otlpTracesProxyRouteLayer,
     assetRouteLayer,
     attachmentUploadRouteLayer,
+    prometheusMetricsRouteLayer,
     staticAndDevRouteLayer,
     websocketRpcRouteLayer,
   ),

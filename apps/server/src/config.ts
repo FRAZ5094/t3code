@@ -68,6 +68,7 @@ export class ServerConfig extends Context.Service<
     readonly traceMaxFiles: number;
     readonly otlpTracesUrl: string | undefined;
     readonly otlpMetricsUrl: string | undefined;
+    readonly prometheusMetricsEnabled: boolean;
     readonly otlpExportIntervalMs: number;
     readonly otlpServiceName: string;
     readonly mode: RuntimeMode;
@@ -190,6 +191,7 @@ const makeTest = Effect.fn("ServerConfig.makeTest")(function* (
     traceMaxFiles: 10,
     otlpTracesUrl: undefined,
     otlpMetricsUrl: undefined,
+    prometheusMetricsEnabled: false,
     otlpExportIntervalMs: 10_000,
     otlpServiceName: "t3-server",
     cwd,
