@@ -213,9 +213,18 @@ function ThreadRouteContent(
   }, [selectedThread, selectedThreadDetailState]);
   const { selectedThreadCwd } = useSelectedThreadWorktree();
   const composer = useThreadComposerState();
+  const selectedThreadKey =
+    selectedThread === null
+      ? null
+      : scopedThreadKey(selectedThread.environmentId, selectedThread.id);
+  const speechSourceThreadKey =
+    selectedThread === null || selectedThreadDetail === null
+      ? null
+      : scopedThreadKey(selectedThread.environmentId, selectedThreadDetail.id);
   const threadSpeech = useThreadSpeech(
     composer.selectedThreadFeed,
-    selectedThread === null ? null : `${selectedThread.environmentId}:${selectedThread.id}`,
+    selectedThreadKey,
+    speechSourceThreadKey,
   );
   const handleSendThreadMessage = useCallback(() => {
     threadSpeech.pauseUntilNextMessage();
