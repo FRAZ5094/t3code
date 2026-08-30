@@ -42,6 +42,7 @@ interface CurrentSpeech {
 
 export interface ThreadSpeechUpdateOptions {
   readonly threadKey?: string | null;
+  readonly sourceThreadKey?: string | null;
 }
 
 export function resolveThreadSpeechRate(value: unknown): ThreadSpeechRate {
@@ -128,13 +129,17 @@ export class ThreadSpeechQueue {
     }
 
     this.rate = rate;
+    const threadMessages =
+      options.sourceThreadKey === undefined || options.sourceThreadKey === options.threadKey
+        ? messages
+        : [];
 
     if (options.threadKey !== undefined && options.threadKey !== this.threadKey) {
       this.hydrated = true;
       this.threadKey = options.threadKey;
       this.resetForContext();
       this.enabled = enabled;
-      this.syncMessages(messages, enabled);
+      this.syncMessages(threadMessages, enabled);
       if (enabled) {
         this.pump();
       }
@@ -144,7 +149,7 @@ export class ThreadSpeechQueue {
     if (!this.hydrated) {
       this.hydrated = true;
       this.enabled = enabled;
-      this.syncMessages(messages, enabled);
+      this.syncMessages(threadMessages, enabled);
       if (enabled) {
         this.pump();
       }
@@ -156,25 +161,25 @@ export class ThreadSpeechQueue {
       this.messagesPresentWhenPaused.clear();
       if (this.enabled) {
         this.enabled = false;
-        this.syncMessages(messages, false);
+        this.syncMessages(threadMessages, false);
         this.stopCurrentSpeech();
       } else {
-        this.syncMessages(messages, false);
+        this.syncMessages(threadMessages, false);
       }
       return;
     }
 
     if (!this.enabled) {
       this.enabled = true;
-      this.startFromLatest(messages);
+      this.startFromLatest(threadMessages);
       this.pump();
       return;
     }
 
-    this.syncMessages(messages, true);
+    this.syncMessages(threadMessages, true);
 
     if (this.waitingForNextMessage) {
-      const hasNextMessage = messages.some(
+      const hasNextMessage = threadMessages.some(
         (message) => !this.messagesPresentWhenPaused.has(message.id),
       );
       for (const messageId of this.messagesPresentWhenPaused) {
@@ -195,7 +200,7 @@ export class ThreadSpeechQueue {
     // the server sends the next message before the previous stream's final
     // event reaches the client.
     let blockedByStreamingMessage = false;
-    for (const message of messages) {
+    for (const message of threadMessages) {
       const progress = this.progressByMessageId.get(message.id);
       if (!progress || blockedByStreamingMessage) {
         continue;

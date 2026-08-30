@@ -34,6 +34,7 @@ function createAndroidSpeechEngine(): ThreadSpeechEngine {
 export function useThreadSpeech(
   feed: ReadonlyArray<ThreadFeedEntry>,
   threadKey: string | null = null,
+  sourceThreadKey: string | null = threadKey,
 ) {
   const isAndroid = Platform.OS === "android";
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
@@ -96,8 +97,8 @@ export function useThreadSpeech(
   );
 
   useEffect(() => {
-    queueRef.current?.update(assistantMessages, enabled, rate, { threadKey });
-  }, [assistantMessages, enabled, rate, threadKey]);
+    queueRef.current?.update(assistantMessages, enabled, rate, { threadKey, sourceThreadKey });
+  }, [assistantMessages, enabled, rate, sourceThreadKey, threadKey]);
 
   const toggle = useCallback(() => {
     if (!isAndroid) {
@@ -106,10 +107,10 @@ export function useThreadSpeech(
     preferenceInitializedRef.current = true;
     const next = !enabledRef.current;
     enabledRef.current = next;
-    queueRef.current?.update(assistantMessages, next, rate, { threadKey });
+    queueRef.current?.update(assistantMessages, next, rate, { threadKey, sourceThreadKey });
     setEnabled(next);
     savePreferences({ readAloudEnabled: next });
-  }, [assistantMessages, isAndroid, rate, savePreferences, threadKey]);
+  }, [assistantMessages, isAndroid, rate, savePreferences, sourceThreadKey, threadKey]);
 
   const setSpeechRate = useCallback(
     (next: ThreadSpeechRate) => {
