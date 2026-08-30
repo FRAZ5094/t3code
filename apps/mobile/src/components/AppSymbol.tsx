@@ -156,8 +156,6 @@ const ANDROID_ICON_BY_SF_SYMBOL: Partial<Record<SFSymbol, Icon>> = {
   "server.rack": IconServer,
   "speaker.slash": IconVolumeOff,
   "speaker.wave.2": IconVolume,
-  "speaker.slash": IconVolumeOff,
-  "speaker.wave.2": IconVolume,
   "sidebar.left": IconLayoutSidebar,
   "sidebar.right": IconLayoutSidebarRight,
   "slider.horizontal.3": IconAdjustmentsHorizontal,
