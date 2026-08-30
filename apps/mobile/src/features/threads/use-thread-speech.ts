@@ -7,7 +7,6 @@ import { Platform } from "react-native";
 import type { ThreadFeedEntry } from "../../lib/threadActivity";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import {
-  THREAD_SPEECH_RATES,
   ThreadSpeechQueue,
   type ThreadSpeechEngine,
   type ThreadSpeechRate,
