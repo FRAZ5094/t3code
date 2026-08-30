@@ -126,6 +126,60 @@ describe("ThreadSpeechQueue", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("stops existing speech on send and waits for the next assistant message", () => {
+    const { calls, engine } = makeEngine();
+    const queue = new ThreadSpeechQueue(engine);
+
+    queue.update(
+      [
+        {
+          id: "previous",
+          text: "The previous assistant response is still being read.",
+          streaming: false,
+        },
+      ],
+      true,
+      1,
+      { threadKey: "thread-a" },
+    );
+
+    queue.pauseUntilNextMessage();
+
+    expect(engine.stop).toHaveBeenCalledTimes(1);
+    calls[0]?.options.onDone();
+
+    queue.update(
+      [
+        {
+          id: "previous",
+          text: "The previous assistant response is still being read, including a late update.",
+          streaming: false,
+        },
+      ],
+      true,
+      1,
+      { threadKey: "thread-a" },
+    );
+    expect(calls).toHaveLength(1);
+
+    queue.update(
+      [
+        {
+          id: "previous",
+          text: "The previous assistant response is still being read, including a late update.",
+          streaming: false,
+        },
+        { id: "next", text: "This is the next assistant response.", streaming: false },
+      ],
+      true,
+      1,
+      { threadKey: "thread-a" },
+    );
+
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.text).toBe("This is the next assistant response.");
+  });
+
   it("stops the old thread and starts only the latest message in the new thread", () => {
     const { calls, engine } = makeEngine();
     const queue = new ThreadSpeechQueue(engine);

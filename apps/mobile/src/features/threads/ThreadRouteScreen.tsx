@@ -217,6 +217,10 @@ function ThreadRouteContent(
     composer.selectedThreadFeed,
     selectedThread === null ? null : `${selectedThread.environmentId}:${selectedThread.id}`,
   );
+  const handleSendThreadMessage = useCallback(() => {
+    threadSpeech.pauseUntilNextMessage();
+    return composer.onSendMessage();
+  }, [composer.onSendMessage, threadSpeech.pauseUntilNextMessage]);
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
   const requests = useSelectedThreadRequests();
@@ -814,7 +818,7 @@ function ThreadRouteContent(
           onRemoveDraftImage={composer.onRemoveDraftImage}
           serverConfig={serverConfig}
           onStopThread={handleStopThread}
-          onSendMessage={composer.onSendMessage}
+          onSendMessage={handleSendThreadMessage}
           onReconnectEnvironment={handleReconnectEnvironment}
           onUpdateThreadModelSelection={composer.onUpdateModelSelection}
           onUpdateThreadRuntimeMode={composer.onUpdateRuntimeMode}
