@@ -123,10 +123,15 @@ export function useThreadSpeech(
     [isAndroid, savePreferences],
   );
 
+  const pauseUntilNextMessage = useCallback(() => {
+    queueRef.current?.pauseUntilNextMessage();
+  }, []);
+
   return {
     enabled: isAndroid && enabled,
     rate,
     toggle,
     setRate: setSpeechRate,
+    pauseUntilNextMessage,
   } as const;
 }

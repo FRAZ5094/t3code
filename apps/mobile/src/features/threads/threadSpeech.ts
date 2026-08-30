@@ -109,6 +109,8 @@ export class ThreadSpeechQueue {
   private hydrated = false;
   private hasContextMessages = false;
   private threadKey: string | null | undefined;
+  private waitingForNextMessage = false;
+  private readonly messagesPresentWhenPaused = new Set<string>();
   private nextSpeechToken = 0;
   private stopPromise: Promise<void> | null = null;
   private disposed = false;
@@ -150,6 +152,8 @@ export class ThreadSpeechQueue {
     }
 
     if (!enabled) {
+      this.waitingForNextMessage = false;
+      this.messagesPresentWhenPaused.clear();
       if (this.enabled) {
         this.enabled = false;
         this.syncMessages(messages, false);
@@ -168,6 +172,23 @@ export class ThreadSpeechQueue {
     }
 
     this.syncMessages(messages, true);
+
+    if (this.waitingForNextMessage) {
+      const hasNextMessage = messages.some(
+        (message) => !this.messagesPresentWhenPaused.has(message.id),
+      );
+      for (const messageId of this.messagesPresentWhenPaused) {
+        const progress = this.progressByMessageId.get(messageId);
+        if (progress) {
+          progress.queuedLength = progress.text.length;
+        }
+      }
+      if (!hasNextMessage) {
+        return;
+      }
+      this.waitingForNextMessage = false;
+      this.messagesPresentWhenPaused.clear();
+    }
 
     // A later message cannot enter the queue while an earlier assistant
     // message is still streaming. This makes the queue order stable even if
@@ -189,6 +210,20 @@ export class ThreadSpeechQueue {
     this.pump();
   }
 
+  pauseUntilNextMessage(): void {
+    if (this.disposed || !this.enabled) {
+      return;
+    }
+
+    this.waitingForNextMessage = true;
+    this.messagesPresentWhenPaused.clear();
+    for (const [messageId, progress] of this.progressByMessageId) {
+      progress.queuedLength = progress.text.length;
+      this.messagesPresentWhenPaused.add(messageId);
+    }
+    this.stopCurrentSpeech();
+  }
+
   dispose(): void {
     if (this.disposed) {
       return;
@@ -201,6 +236,8 @@ export class ThreadSpeechQueue {
     this.progressByMessageId.clear();
     this.pending.length = 0;
     this.hasContextMessages = false;
+    this.waitingForNextMessage = false;
+    this.messagesPresentWhenPaused.clear();
     this.stopCurrentSpeech();
   }
 
