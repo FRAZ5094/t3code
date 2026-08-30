@@ -212,6 +212,39 @@ describe("ThreadSpeechQueue", () => {
     expect(calls).toHaveLength(2);
   });
 
+  it("ignores feed updates that belong to a different thread", () => {
+    const { calls, engine } = makeEngine();
+    const queue = new ThreadSpeechQueue(engine);
+
+    queue.update(
+      [{ id: "message-a-1", text: "The current response from thread A.", streaming: false }],
+      true,
+      1,
+      { threadKey: "thread-a", sourceThreadKey: "thread-a" },
+    );
+    finishLatest(calls);
+
+    queue.update([], true, 1, { threadKey: "thread-b", sourceThreadKey: null });
+    queue.update(
+      [{ id: "message-a-2", text: "A background response from thread A.", streaming: false }],
+      true,
+      1,
+      { threadKey: "thread-b", sourceThreadKey: "thread-a" },
+    );
+
+    expect(calls).toHaveLength(1);
+
+    queue.update(
+      [{ id: "message-b", text: "A new response from thread B.", streaming: false }],
+      true,
+      1,
+      { threadKey: "thread-b", sourceThreadKey: "thread-b" },
+    );
+
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.text).toBe("A new response from thread B.");
+  });
+
   it("uses the latest selected speed for the next queued utterance", () => {
     const { calls, engine } = makeEngine();
     const queue = new ThreadSpeechQueue(engine);
