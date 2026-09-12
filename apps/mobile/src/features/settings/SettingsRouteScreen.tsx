@@ -66,15 +66,12 @@ type LiveActivityStatus = "checking" | "enabled" | "disabled" | "signed-out" | "
 // never read as enabled when the device cannot receive anything (e.g. the
 // registration request timed out).
 function useDeviceRegistered(): boolean {
-  const androidRegistration = useAndroidPushRegistration();
   const status = useSyncExternalStore(
     subscribeAgentAwarenessRegistrationStatus,
     getAgentAwarenessRegistrationStatus,
     () => "unknown" as const,
   );
-  return Platform.OS === "android"
-    ? androidRegistration.status === "registered"
-    : status === "registered";
+  return status === "registered";
 }
 
 export function SettingsRouteScreen() {
@@ -636,13 +633,15 @@ function ConfiguredSettingsRouteScreen() {
             // relay; otherwise notifications cannot be delivered regardless of
             // the local iOS permission.
             value={
-              agentAwarenessPushAvailable && notificationStatus === "enabled" && deviceRegistered
+              notificationStatus === "enabled" &&
+              (Platform.OS === "android"
+                ? androidPushRegistration.status === "registered"
+                : agentAwarenessPushAvailable && deviceRegistered)
             }
             onValueChange={handleDeviceNotificationsChange}
           />
           <SettingsSwitchRow
             disabled={
-              Platform.OS !== "ios" ||
               !agentAwarenessPlatform.supported ||
               !agentAwarenessPushAvailable ||
               !isLoaded ||
@@ -655,7 +654,6 @@ function ConfiguredSettingsRouteScreen() {
             // Same gate: a saved preference is meaningless until the device
             // registration the relay needs to push updates has succeeded.
             value={
-              Platform.OS === "ios" &&
               agentAwarenessPushAvailable &&
               (liveActivityStatus === "enabled" || liveActivityStatus === "linking") &&
               deviceRegistered
