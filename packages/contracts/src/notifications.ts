@@ -42,7 +42,7 @@ export type PushNotificationUnregistrationInput = typeof PushNotificationUnregis
 export const PushNotificationOperation = Schema.Literals(["register", "unregister", "send"]);
 export type PushNotificationOperation = typeof PushNotificationOperation.Type;
 
-export class PushNotificationError extends Schema.TaggedErrorClass<PushNotificationError>()(
+export class PushNotificationError extends Schema.TaggedError<PushNotificationError>()(
   "PushNotificationError",
   {
     operation: PushNotificationOperation,
