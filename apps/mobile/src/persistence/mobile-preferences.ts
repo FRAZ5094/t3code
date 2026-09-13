@@ -5,7 +5,7 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import type { SidebarProjectGroupingMode } from "@t3tools/contracts";
+import { PushNotificationPreferences, type SidebarProjectGroupingMode } from "@t3tools/contracts";
 import { MOBILE_THEME_IDS, type MobileThemeId, type MobileThemeMode } from "../lib/mobileTheme";
 
 import * as MobileDatabase from "./mobile-database";
@@ -16,6 +16,7 @@ const PREFERENCES_KEY = "t3code.preferences";
 const PREFERENCES_FALLBACK_KEY = "t3code.preferences.fallback";
 
 export interface Preferences {
+  readonly directPushPreferences?: PushNotificationPreferences;
   readonly liveActivitiesEnabled?: boolean;
   readonly readAloudEnabled?: boolean;
   readonly readAloudRate?: number;
@@ -88,6 +89,7 @@ export class MobilePreferencesStore extends Context.Service<
 
 function sanitizePreferences(parsed: Preferences): Preferences {
   const preferences: {
+    directPushPreferences?: PushNotificationPreferences;
     liveActivitiesEnabled?: boolean;
     readAloudEnabled?: boolean;
     readAloudRate?: number;
@@ -111,6 +113,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     threadListSnoozedShelfExpanded?: boolean;
   } = {};
 
+  if (Schema.is(PushNotificationPreferences)(parsed.directPushPreferences)) {
+    preferences.directPushPreferences = parsed.directPushPreferences;
+  }
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
     preferences.liveActivitiesEnabled = parsed.liveActivitiesEnabled;
   }

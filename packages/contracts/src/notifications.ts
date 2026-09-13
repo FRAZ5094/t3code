@@ -8,6 +8,8 @@ export type PushNotificationPlatform = typeof PushNotificationPlatform.Type;
 export const PushNotificationPreferences = Schema.Struct({
   notificationsEnabled: Schema.Boolean,
   notifyOnApproval: Schema.Boolean,
+  notifyOnInput: Schema.Boolean,
+  liveActivitiesEnabled: Schema.Boolean,
   notifyOnCompletion: Schema.Boolean,
   notifyOnFailure: Schema.Boolean,
 });
@@ -15,13 +17,13 @@ export type PushNotificationPreferences = typeof PushNotificationPreferences.Typ
 
 /**
  * Registration sent by a mobile client to each environment it can reach.
- * The environment stores this locally and sends pushes directly to Expo; no
+ * The environment stores this locally and sends pushes directly to Firebase; no
  * hosted T3 service is involved in delivery.
  */
 export const PushNotificationRegistrationInput = Schema.Struct({
   deviceId: TrimmedNonEmptyString,
   platform: PushNotificationPlatform,
-  expoPushToken: TrimmedNonEmptyString,
+  fcmToken: TrimmedNonEmptyString,
   appIdentifier: Schema.optionalKey(TrimmedNonEmptyString),
   appVersion: Schema.optionalKey(TrimmedNonEmptyString),
   label: TrimmedNonEmptyString,

@@ -154,59 +154,64 @@ function LocalSettingsRouteScreen() {
 }
 
 function LocalAndroidNotificationsSection() {
-  const androidPushRegistration = useAndroidPushRegistration();
-
-  if (Platform.OS !== "android") {
-    return null;
-  }
-
-  const enableNotifications = () => {
-    void androidPushRegistration
-      .requestPermission()
-      .then((result) => {
-        if (result.type === "granted") {
-          Alert.alert(
-            "Notifications enabled",
-            androidPushRegistration.status === "registered"
-              ? "Agent completion, approval, and failure notifications are enabled."
-              : "Permission was granted. Connect an environment to register this device.",
-          );
-        }
-      })
-      .catch((error: unknown) => {
+  const push = useAndroidPushRegistration();
+  if (Platform.OS !== "android") return null;
+  const change = (patch: Parameters<typeof push.update>[0]) => {
+    void push
+      .update(patch)
+      .catch((error: unknown) =>
         Alert.alert(
           "Notifications unavailable",
-          error instanceof Error ? error.message : "Could not request notification permission.",
-        );
-      });
+          error instanceof Error ? error.message : String(error),
+        ),
+      );
   };
-
   return (
     <SettingsSection title="Notifications">
       <SettingsSwitchRow
         icon="bell.badge"
         label="Device Notifications"
+        disabled={!push.supported}
+        value={push.permissionGranted && push.preferences.notificationsEnabled}
         subtitle={
-          androidPushRegistration.status === "unknown"
-            ? "Connect an environment to receive agent alerts"
-            : undefined
+          !push.supported
+            ? "Install the latest Android build to enable notifications"
+            : push.status === "registered"
+              ? "Receive alerts from your paired environments"
+              : "Connect an environment to set up delivery"
         }
-        disabled={androidPushRegistration.status === "pending"}
-        value={androidPushRegistration.status === "registered"}
-        onValueChange={(enabled) => {
-          if (enabled) {
-            enableNotifications();
-            return;
-          }
-          Alert.alert(
-            "Disable notifications",
-            "Open Android Settings to disable notifications for T3 Code.",
-            [
-              { text: "Cancel", style: "cancel" },
-              { text: "Open Settings", onPress: () => void Linking.openSettings() },
-            ],
-          );
-        }}
+        onValueChange={(notificationsEnabled) => change({ notificationsEnabled })}
+      />
+      <SettingsSwitchRow
+        icon="bolt.circle"
+        label="Ongoing Agent Activity"
+        disabled={!push.supported}
+        value={push.permissionGranted && push.preferences.liveActivitiesEnabled}
+        subtitle="One activity card per environment"
+        onValueChange={(liveActivitiesEnabled) => change({ liveActivitiesEnabled })}
+      />
+      {(
+        [
+          ["notifyOnApproval", "Approval requests"],
+          ["notifyOnInput", "Agent questions"],
+          ["notifyOnCompletion", "Completed tasks"],
+          ["notifyOnFailure", "Failed tasks"],
+        ] as const
+      ).map(([key, label]) => (
+        <SettingsSwitchRow
+          key={key}
+          icon="bell.badge"
+          label={label}
+          disabled={!push.supported || !push.preferences.notificationsEnabled}
+          value={push.preferences[key]}
+          onValueChange={(enabled) => change({ [key]: enabled })}
+        />
+      ))}
+      {push.error ? <Text className="px-2 text-sm text-foreground-muted">{push.error}</Text> : null}
+      <SettingsRow
+        icon="arrow.clockwise"
+        label="Refresh notification registration"
+        onPress={() => void push.refresh()}
       />
     </SettingsSection>
   );
@@ -226,7 +231,6 @@ function ConfiguredSettingsRouteScreen() {
   const { getToken, isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const { user } = useUser();
   const { savedConnectionsById } = useSavedRemoteConnections();
-  const androidPushRegistration = useAndroidPushRegistration();
   const [notificationStatus, setNotificationStatus] = useState<NotificationStatus>("checking");
   const [liveActivityStatus, setLiveActivityStatus] = useState<LiveActivityStatus>("checking");
   const deviceRegistered = useDeviceRegistered();
@@ -284,48 +288,6 @@ function ConfiguredSettingsRouteScreen() {
   }, [isLoaded, isSignedIn, preferencesResult]);
 
   const requestNotifications = useCallback(async () => {
-    if (Platform.OS === "android") {
-      try {
-        const result = await androidPushRegistration.requestPermission();
-        if (result.type === "granted") {
-          setNotificationStatus("enabled");
-          if (androidPushRegistration.status === "registered") {
-            Alert.alert(
-              "Notifications enabled",
-              "Agent completion, approval, and failure notifications are enabled.",
-            );
-          } else {
-            Alert.alert(
-              "Permission granted",
-              "Connect an environment to register this device for agent notifications.",
-            );
-          }
-        } else if (result.type === "unsupported") {
-          setNotificationStatus("unsupported");
-        } else {
-          setNotificationStatus("disabled");
-          Alert.alert(
-            "Notifications disabled",
-            result.canAskAgain
-              ? "Notifications were not enabled."
-              : "Notifications were denied for this app. Open Settings to enable them.",
-            result.canAskAgain
-              ? undefined
-              : [
-                  { text: "Cancel", style: "cancel" },
-                  { text: "Open Settings", onPress: () => void Linking.openSettings() },
-                ],
-          );
-        }
-      } catch (error) {
-        Alert.alert(
-          "Notifications unavailable",
-          error instanceof Error ? error.message : "Could not request notification permission.",
-        );
-      }
-      return;
-    }
-
     const result = await settleAsyncResult(() =>
       runtime.runPromiseExit(
         requestAgentNotificationPermission.pipe(
@@ -380,7 +342,7 @@ function ConfiguredSettingsRouteScreen() {
         { text: "Open Settings", onPress: () => void Linking.openSettings() },
       ],
     );
-  }, [androidPushRegistration]);
+  }, []);
 
   const promptSignIn = useCallback(() => {
     Alert.alert(
@@ -619,48 +581,53 @@ function ConfiguredSettingsRouteScreen() {
             value={`${environmentCount}`}
             target="SettingsEnvironments"
           />
-          <SettingsSwitchRow
-            icon="bell.badge"
-            label="Device Notifications"
-            disabled={
-              !agentAwarenessPlatform.supported ||
-              !agentAwarenessPushAvailable ||
-              notificationStatus === "checking" ||
-              notificationStatus === "unsupported"
-            }
-            subtitle={agentAwarenessSubtitle}
-            // Only reads as on when this device is actually registered with the
-            // relay; otherwise notifications cannot be delivered regardless of
-            // the local iOS permission.
-            value={
-              notificationStatus === "enabled" &&
-              (Platform.OS === "android"
-                ? androidPushRegistration.status === "registered"
-                : agentAwarenessPushAvailable && deviceRegistered)
-            }
-            onValueChange={handleDeviceNotificationsChange}
-          />
-          <SettingsSwitchRow
-            disabled={
-              !agentAwarenessPlatform.supported ||
-              !agentAwarenessPushAvailable ||
-              !isLoaded ||
-              liveActivityStatus === "checking" ||
-              liveActivityStatus === "linking"
-            }
-            icon="bolt.circle"
-            label={Platform.OS === "android" ? "Ongoing Agent Activity" : "Live Activity Updates"}
-            subtitle={agentAwarenessSubtitle}
-            // Same gate: a saved preference is meaningless until the device
-            // registration the relay needs to push updates has succeeded.
-            value={
-              agentAwarenessPushAvailable &&
-              (liveActivityStatus === "enabled" || liveActivityStatus === "linking") &&
-              deviceRegistered
-            }
-            onValueChange={handleLiveActivitiesChange}
-          />
+          {Platform.OS === "ios" ? (
+            <>
+              <SettingsSwitchRow
+                icon="bell.badge"
+                label="Device Notifications"
+                disabled={
+                  !agentAwarenessPlatform.supported ||
+                  !agentAwarenessPushAvailable ||
+                  notificationStatus === "checking" ||
+                  notificationStatus === "unsupported"
+                }
+                subtitle={agentAwarenessSubtitle}
+                // Only reads as on when this device is actually registered with the
+                // relay; otherwise notifications cannot be delivered regardless of
+                // the local iOS permission.
+                value={
+                  notificationStatus === "enabled" &&
+                  agentAwarenessPushAvailable &&
+                  deviceRegistered
+                }
+                onValueChange={handleDeviceNotificationsChange}
+              />
+              <SettingsSwitchRow
+                disabled={
+                  !agentAwarenessPlatform.supported ||
+                  !agentAwarenessPushAvailable ||
+                  !isLoaded ||
+                  liveActivityStatus === "checking" ||
+                  liveActivityStatus === "linking"
+                }
+                icon="bolt.circle"
+                label="Live Activity Updates"
+                subtitle={agentAwarenessSubtitle}
+                // Same gate: a saved preference is meaningless until the device
+                // registration the relay needs to push updates has succeeded.
+                value={
+                  agentAwarenessPushAvailable &&
+                  (liveActivityStatus === "enabled" || liveActivityStatus === "linking") &&
+                  deviceRegistered
+                }
+                onValueChange={handleLiveActivitiesChange}
+              />
+            </>
+          ) : null}
         </SettingsSection>
+
+        <LocalAndroidNotificationsSection />
 
         <GeneralSettingsSection />
 
