@@ -159,7 +159,8 @@ function canRegisterRemoteLiveActivities(): boolean {
 }
 
 function canRegisterPushNotifications(): boolean {
-  return Platform.OS === "ios" || Platform.OS === "android";
+  // Android registers with paired environments in this fork.
+  return Platform.OS === "ios";
 }
 
 export function shouldRegisterAgentAwarenessDeviceForProvider(

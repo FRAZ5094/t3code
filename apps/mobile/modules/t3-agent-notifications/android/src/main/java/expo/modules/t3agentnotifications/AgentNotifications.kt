@@ -7,6 +7,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
@@ -32,13 +33,13 @@ class AgentMessagingService : ExpoFirebaseMessagingService() {
 
 class AgentActivityDismissReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
-    AgentNotifications.dismiss(context)
+    AgentNotifications.dismiss(AgentNotifications.scopedContext(context, intent.getStringExtra("environment_id")))
   }
 }
 
 class AgentActivityExpiryReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
-    AgentNotifications.expire(context)
+    AgentNotifications.expire(AgentNotifications.scopedContext(context, intent.getStringExtra("environment_id")))
   }
 }
 
@@ -53,6 +54,45 @@ object AgentNotifications {
   private const val MAX_MESSAGE_AGE_MS = 10 * 60 * 1000L
   private const val RUNNING_LIFETIME_MS = 2 * 60 * 60 * 1000L
   private const val MAX_LIFETIME_MS = 24 * 60 * 60 * 1000L
+
+  private class EnvironmentContext(base: Context, val environmentId: String) : ContextWrapper(base) {
+    override fun getSharedPreferences(name: String, mode: Int): SharedPreferences =
+      super.getSharedPreferences(if (name == STORE) "$STORE.$environmentId" else name, mode)
+  }
+
+  fun scopedContext(context: Context, environmentId: String?): Context =
+    if (environmentId.isNullOrEmpty()) context else EnvironmentContext(context, environmentId)
+
+  private fun environmentId(context: Context): String? =
+    (context as? EnvironmentContext)?.environmentId
+
+  private fun activityTag(context: Context): String =
+    environmentId(context)?.let { "$ACTIVITY_TAG.$it" } ?: ACTIVITY_TAG
+
+  private fun alertTag(context: Context): String =
+    environmentId(context)?.let { "$ALERT_TAG.$it" } ?: ALERT_TAG
+
+  private fun activityId(context: Context): Int =
+    environmentId(context)?.hashCode() ?: ACTIVITY_ID
+
+  @Synchronized
+  fun configureDirect(context: Context, deviceId: String, scheme: String, environments: List<String>,
+    notificationsEnabled: Boolean, ongoingEnabled: Boolean) {
+    val root = context.getSharedPreferences("$STORE.direct", Context.MODE_PRIVATE)
+    val previous = root.getStringSet("environments", emptySet()).orEmpty().toSet()
+    (previous - environments.toSet()).forEach { clear(scopedContext(context, it)) }
+    environments.forEach {
+      val scoped = scopedContext(context, it)
+      configure(scoped, deviceId, "paired:$deviceId", scheme, ongoingEnabled)
+      scoped.getSharedPreferences(STORE, Context.MODE_PRIVATE).edit()
+        .putBoolean("alertsEnabled", notificationsEnabled).apply()
+      if (!notificationsEnabled) {
+        manager(context).activeNotifications.filter { n -> n.tag == "$ALERT_TAG.$it" }
+          .forEach { n -> manager(context).cancel(n.tag, n.id) }
+      }
+    }
+    root.edit().putStringSet("environments", environments.toSet()).apply()
+  }
 
   @Synchronized
   fun configure(
@@ -86,7 +126,7 @@ object AgentNotifications {
     cancelActivity(context)
     context.getSharedPreferences(STORE, Context.MODE_PRIVATE).edit().clear().apply()
     val manager = manager(context)
-    manager.activeNotifications.filter { it.tag == ACTIVITY_TAG || it.tag == ALERT_TAG }
+    manager.activeNotifications.filter { it.tag == activityTag(context) || it.tag == alertTag(context) }
       .forEach { manager.cancel(it.tag, it.id) }
   }
 
@@ -110,7 +150,11 @@ object AgentNotifications {
   }
 
   @Synchronized
-  fun receive(context: Context, data: Map<String, String>) {
+  fun receive(baseContext: Context, data: Map<String, String>) {
+    val scope = data["environment_id"]
+    if (scope != null && scope !in baseContext.getSharedPreferences("$STORE.direct", Context.MODE_PRIVATE)
+      .getStringSet("environments", emptySet()).orEmpty()) return
+    val context = scopedContext(baseContext, scope)
     val prefs = context.getSharedPreferences(STORE, Context.MODE_PRIVATE)
     val updatedAt = data["updated_at"]?.toLongOrNull() ?: return
     val registered = prefs.getBoolean("enabled", false) &&
@@ -139,10 +183,11 @@ object AgentNotifications {
     if (alertId != null && alertId !in seen) {
       // Match iOS foreground presentation. Consume suppressed alerts as well,
       // so a delivery retry cannot surface them after the app backgrounds.
-      if (!ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+      if (prefs.getBoolean("alertsEnabled", true) &&
+        !ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
         val title = data["alert_title"].orEmpty().take(120)
         // Grouped alerts list up to five 120-character thread titles.
-        val body = data["alert_body"].orEmpty().take(608)
+        val body = data["alert_body"].orEmpty().take(2800)
         val id = alertId.hashCode()
         val notification = base(context, ALERT_CHANNEL)
           .setContentTitle(title).setContentText(body)
@@ -150,7 +195,7 @@ object AgentNotifications {
           .setAutoCancel(true)
           .setContentIntent(contentIntent(context, scheme, data["alert_path"], id))
           .build()
-        manager(context).notify(ALERT_TAG, id, notification)
+        manager(context).notify(alertTag(context), id, notification)
       }
       prefs.edit().remove("seenAlerts").putString(
         "seenAlertsOrdered",
@@ -200,8 +245,9 @@ object AgentNotifications {
     val body = data["activity_body"].orEmpty().take(240)
     val dismissIntent = PendingIntent.getBroadcast(
       context,
-      ACTIVITY_ID,
-      Intent(context, AgentActivityDismissReceiver::class.java),
+      activityId(context),
+      Intent(context, AgentActivityDismissReceiver::class.java)
+        .putExtra("environment_id", environmentId(context)),
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
     val lines = (0..4).mapNotNull {
@@ -220,11 +266,11 @@ object AgentNotifications {
       // Live Updates must remain uncolorized to qualify for promotion.
       .setColorized(false)
       .setRequestPromotedOngoing(active)
-      .setContentIntent(contentIntent(context, scheme, data["activity_path"], ACTIVITY_ID))
+      .setContentIntent(contentIntent(context, scheme, data["activity_path"], activityId(context)))
       .setDeleteIntent(dismissIntent)
       .addAction(0, "Dismiss", dismissIntent)
       .build()
-    manager(context).notify(ACTIVITY_TAG, ACTIVITY_ID, notification)
+    manager(context).notify(activityTag(context), activityId(context), notification)
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
       // Notification timeouts were added in API 26. One inexact alarm also
       // expires cards on Android 7, including when the app process has exited.
@@ -240,13 +286,14 @@ object AgentNotifications {
 
   private fun expiryIntent(context: Context): PendingIntent = PendingIntent.getBroadcast(
     context,
-    ACTIVITY_ID,
-    Intent(context, AgentActivityExpiryReceiver::class.java),
+    activityId(context),
+    Intent(context, AgentActivityExpiryReceiver::class.java)
+      .putExtra("environment_id", environmentId(context)),
     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
   )
 
   private fun cancelActivity(context: Context) {
-    manager(context).cancel(ACTIVITY_TAG, ACTIVITY_ID)
+    manager(context).cancel(activityTag(context), activityId(context))
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
       context.getSystemService(AlarmManager::class.java).cancel(expiryIntent(context))
       context.getSharedPreferences(STORE, Context.MODE_PRIVATE).edit().remove("expiresAt").apply()

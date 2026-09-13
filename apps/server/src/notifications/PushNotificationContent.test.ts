@@ -17,8 +17,7 @@ describe("buildPushNotificationContent", () => {
       }),
     ).toEqual({
       title: "Can we use the new auth callback?",
-      body:
-        "Yes — the callback can be used here. It is validated against the configured allowlist before the session is resumed.",
+      body: "Yes — the callback can be used here. It is validated against the configured allowlist before the session is resumed.",
     });
   });
 

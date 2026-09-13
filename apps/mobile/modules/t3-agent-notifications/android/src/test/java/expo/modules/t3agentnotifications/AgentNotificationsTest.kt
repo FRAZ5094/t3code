@@ -66,6 +66,38 @@ class AgentNotificationsTest {
   )
 
   @Test
+  fun directEnvironmentsKeepIndependentCardsAndDismissal() {
+    AgentNotifications.configureDirect(context, "device", "t3code-dev", listOf("a", "b"), true, true)
+    val a = update("alert-a", true) + mapOf("environment_id" to "a", "user_id" to "paired:device")
+    val b = update("alert-b", true) + mapOf("environment_id" to "b", "user_id" to "paired:device")
+    AgentNotifications.receive(context, a)
+    AgentNotifications.receive(context, b)
+    assertEquals(2, manager.activeNotifications.count { it.tag.startsWith("t3-agent-activity.") })
+    AgentNotifications.dismiss(AgentNotifications.scopedContext(context, "a"))
+    assertEquals(1, manager.activeNotifications.count { it.tag.startsWith("t3-agent-activity.") })
+    AgentNotifications.configureDirect(context, "device", "t3code-dev", listOf("a", "b"), true, true)
+    AgentNotifications.receive(context, a)
+    assertEquals(1, manager.activeNotifications.count { it.tag.startsWith("t3-agent-activity.") })
+    AgentNotifications.configureDirect(context, "device", "t3code-dev", listOf("a"), false, false)
+    AgentNotifications.receive(context, b)
+    AgentNotifications.receive(context, a + mapOf("alert_id" to "disabled-alert"))
+    assertEquals(0, manager.activeNotifications.size)
+  }
+
+  @Test
+  fun directCompletionPreservesLongAnswerPreview() {
+    AgentNotifications.configureDirect(context, "device", "t3code-dev", listOf("a"), true, false)
+    val answer = "A useful detailed answer. ".repeat(60)
+    AgentNotifications.receive(context, update("long-answer", false) + mapOf(
+      "environment_id" to "a", "user_id" to "paired:device", "alert_body" to answer
+    ))
+    val displayed = manager.activeNotifications.single().notification.extras.getCharSequence(Notification.EXTRA_BIG_TEXT).toString()
+    // Android 13+ applies its own text cap after the native handler builds the alert.
+    assertTrue(displayed.length > 608)
+    assertTrue(answer.startsWith(displayed))
+  }
+
+  @Test
   fun alertHistoryEvictsOnlyTheOldestEntryAfterCapacity() {
     lifecycle.currentState = Lifecycle.State.RESUMED
     for (id in 0..64) AgentNotifications.receive(context, update("alert-$id", false))

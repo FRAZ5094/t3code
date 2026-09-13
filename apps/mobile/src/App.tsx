@@ -26,7 +26,6 @@ import { appBlurTargetRef } from "./lib/appBlurTarget";
 import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
 
 import "../global.css";
-import "./features/agent-awareness/notificationSetup";
 
 if (process.env.EXPO_PUBLIC_SHOWCASE === "1") {
   prepareNativeShowcaseCapture();

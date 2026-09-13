@@ -258,6 +258,10 @@ const runBackgroundOperations = Effect.fn("TestRemoteRegistration.runBackgroundO
 describe("makeRelayDeviceRegistrationRequest", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.mocked(Notifications.getPermissionsAsync).mockReset();
+    vi.mocked(Notifications.getPermissionsAsync).mockResolvedValue({ granted: true } as Awaited<
+      ReturnType<typeof Notifications.getPermissionsAsync>
+    >);
     vi.mocked(Notifications.getDevicePushTokenAsync).mockResolvedValue({
       type: "ios",
       data: "apns-token",
@@ -850,6 +854,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     };
 
     vi.mocked(Notifications.getDevicePushTokenAsync).mockClear();
+    vi.mocked(configureAndroidAgentNotifications).mockClear();
     setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"));
 
     const tokenListener = vi.mocked(Notifications.addPushTokenListener).mock.calls.at(-1)?.[0];
@@ -951,7 +956,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(widgetMocks.start).toHaveBeenCalledTimes(1);
   });
-  for (const os of ["ios", "android"] as const) {
+  for (const os of ["ios"] as const) {
     it.effect(
       `does not enable ${os} notifications when a token rotates after permission is revoked`,
       () => {
@@ -1005,9 +1010,9 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     );
   }
   it.effect("preserves relay rejection errors with React Native response headers", () => {
-    vi.spyOn(Platform, "OS", "get").mockReturnValue("android");
+    vi.spyOn(Platform, "OS", "get").mockReturnValue("ios");
     vi.mocked(Notifications.getDevicePushTokenAsync).mockResolvedValue({
-      type: "android",
+      type: "ios",
       data: "fcm-token",
     });
     const rejectedResponse = new Response("Unsupported device platform", { status: 400 });
@@ -1048,90 +1053,31 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       }
       expect(getAgentAwarenessRegistrationStatus()).toBe("failed");
       expect(saveAgentAwarenessRegistrationRecord).not.toHaveBeenCalled();
-    }).pipe(Effect.provide(relayTestLayer));
+    }).pipe(
+      Effect.provide(relayTestLayer),
+      Effect.provideService(FetchHttpClient.Fetch, globalThis.fetch),
+    );
   });
 
-  it.effect("registers an Android FCM token without invoking Apple Live Activities", () => {
-    vi.spyOn(Platform, "OS", "get").mockReturnValue("android");
-    vi.spyOn(Platform, "Version", "get").mockReturnValue(36);
-    vi.mocked(Notifications.getDevicePushTokenAsync).mockResolvedValue({
-      type: "android",
-      data: "fcm-token",
-    });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((request: RequestInfo | URL) => {
-        const url = request instanceof Request ? request.url : String(request);
-        return Promise.resolve(
-          Response.json(
-            url.endsWith("/v1/client/dpop-token")
-              ? {
-                  access_token: "relay-dpop-token",
-                  issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
-                  token_type: "DPoP",
-                  expires_in: 300,
-                  scope: "mobile:registration",
-                }
-              : { ok: true },
-          ),
-        );
-      }),
-    );
-    Constants.expoConfig!.extra = { relay: { url: "https://relay.example.test" } };
-    setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"), "user-a");
-    return Effect.gen(function* () {
-      yield* refreshAgentAwarenessRegistration();
-      expect(Notifications.getDevicePushTokenAsync).toHaveBeenCalled();
-      expect(saveAgentAwarenessRegistrationRecord).toHaveBeenCalled();
-      expect(registrationRecordStore.current?.signature).toContain("fcm-token");
-      expect(registrationRecordStore.current?.signature).toContain("android");
-      expect(widgetMocks.getInstances).not.toHaveBeenCalled();
-      expect(configureAndroidAgentNotifications).toHaveBeenCalledWith("device-1", "user-a", true);
-      vi.mocked(clearAndroidAgentNotifications).mockClear();
-      setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-b"), "user-b");
-      expect(clearAndroidAgentNotifications).toHaveBeenCalled();
-    }).pipe(Effect.provide(relayTestLayer));
-  });
   it.effect(
-    "preserves same-account Android notifications and replays on remount and later foreground",
+    "leaves Android push registration to paired environments across cloud account changes",
     () => {
       vi.spyOn(Platform, "OS", "get").mockReturnValue("android");
-      vi.spyOn(Platform, "Version", "get").mockReturnValue(36);
-      vi.mocked(Notifications.getDevicePushTokenAsync).mockResolvedValue({
-        type: "android",
-        data: "fcm-token",
-      });
       Constants.expoConfig!.extra = { relay: { url: "https://relay.example.test" } };
-      const now = vi.spyOn(Date, "now").mockReturnValue(1000000);
-      vi.mocked(clearAndroidAgentNotifications).mockClear();
-      setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token"), "user-a");
+      vi.mocked(Notifications.getDevicePushTokenAsync).mockClear();
+      vi.mocked(configureAndroidAgentNotifications).mockClear();
+      setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"), "user-a");
       return Effect.gen(function* () {
-        yield* runBackgroundOperations();
-        expect(getAgentAwarenessRegistrationStatus()).toBe("registered");
-        expect(saveAgentAwarenessRegistrationRecord).toHaveBeenCalledTimes(1);
         yield* refreshAgentAwarenessRegistration();
-        expect(saveAgentAwarenessRegistrationRecord).toHaveBeenCalledTimes(1);
-        releaseAgentAwarenessRelayTokenProvider();
-        setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token"), "user-a");
+        setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-b"), "user-b");
         yield* runBackgroundOperations();
-        expect(clearAndroidAgentNotifications).not.toHaveBeenCalled();
-        expect(saveAgentAwarenessRegistrationRecord).toHaveBeenCalledTimes(2);
-        for (const listener of appStateMock.listeners) listener("active");
-        yield* runBackgroundOperations();
-        expect(saveAgentAwarenessRegistrationRecord).toHaveBeenCalledTimes(2);
-        now.mockReturnValue(1060001);
-        for (const listener of appStateMock.listeners) listener("active");
-        yield* runBackgroundOperations();
-        expect(saveAgentAwarenessRegistrationRecord).toHaveBeenCalledTimes(3);
-        expect(clearAndroidAgentNotifications).not.toHaveBeenCalled();
+        expect(Notifications.getDevicePushTokenAsync).not.toHaveBeenCalled();
+        expect(saveAgentAwarenessRegistrationRecord).not.toHaveBeenCalled();
+        expect(configureAndroidAgentNotifications).not.toHaveBeenCalled();
         expect(widgetMocks.getInstances).not.toHaveBeenCalled();
-        setAgentAwarenessRelayTokenProvider(null);
-        expect(clearAndroidAgentNotifications).toHaveBeenCalled();
-        expect(clearAgentAwarenessRegistrationRecord).toHaveBeenCalled();
       }).pipe(Effect.provide(relayTestLayer));
     },
   );
-
   it.effect(
     "does not reconfigure or register a detached Android account from an in-flight operation",
     () => {

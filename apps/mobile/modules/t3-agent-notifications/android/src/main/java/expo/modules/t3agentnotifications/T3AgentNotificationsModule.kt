@@ -18,6 +18,13 @@ class T3AgentNotificationsModule : Module() {
       }
     }
 
+    Function("configureDirect") { deviceId: String, scheme: String, environments: List<String>,
+      notificationsEnabled: Boolean, ongoingEnabled: Boolean ->
+      appContext.reactContext?.let {
+        AgentNotifications.configureDirect(it, deviceId, scheme, environments, notificationsEnabled, ongoingEnabled)
+      }
+    }
+
     Function("clear") {
       appContext.reactContext?.let { AgentNotifications.clear(it) }
     }
