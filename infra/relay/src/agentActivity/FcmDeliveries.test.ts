@@ -114,6 +114,7 @@ function harness() {
         }),
     }),
     Layer.succeed(FcmClient, {
+      checkConfiguration: Effect.void,
       send: (input) =>
         Effect.suspend(() =>
           current.deliveryFailure

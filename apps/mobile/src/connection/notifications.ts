@@ -8,8 +8,7 @@ export const registerPushNotification = createEnvironmentRpcCommand(connectionAt
   tag: WS_METHODS.notificationsRegister,
   concurrency: {
     mode: "singleFlight",
-    key: ({ environmentId, input }) =>
-      JSON.stringify([environmentId, input.deviceId, input.expoPushToken]),
+    key: ({ environmentId, input }) => JSON.stringify([environmentId, input]),
   },
 });
 

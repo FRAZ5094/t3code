@@ -346,6 +346,34 @@
     "./gitPatchPath": {
       "types": "./src/gitPatchPath.ts",
       "import": "./src/gitPatchPath.ts"
+    },
+    "./agentNotifications/WebCrypto": {
+      "types": "./src/agentNotifications/WebCrypto.ts",
+      "import": "./src/agentNotifications/WebCrypto.ts"
+    },
+    "./agentNotifications/agentActivityPayloads": {
+      "types": "./src/agentNotifications/agentActivityPayloads.ts",
+      "import": "./src/agentNotifications/agentActivityPayloads.ts"
+    },
+    "./agentNotifications/FcmClient": {
+      "types": "./src/agentNotifications/FcmClient.ts",
+      "import": "./src/agentNotifications/FcmClient.ts"
+    },
+    "./agentNotifications/agentActivityAlerts": {
+      "types": "./src/agentNotifications/agentActivityAlerts.ts",
+      "import": "./src/agentNotifications/agentActivityAlerts.ts"
+    },
+    "./agentNotifications/fcmPayloads": {
+      "types": "./src/agentNotifications/fcmPayloads.ts",
+      "import": "./src/agentNotifications/fcmPayloads.ts"
+    },
+    "./agentNotifications/FcmAssertionSigner": {
+      "types": "./src/agentNotifications/FcmAssertionSigner.ts",
+      "import": "./src/agentNotifications/FcmAssertionSigner.ts"
+    },
+    "./agentNotifications/agentActivityAggregate": {
+      "types": "./src/agentNotifications/agentActivityAggregate.ts",
+      "import": "./src/agentNotifications/agentActivityAggregate.ts"
     }
   },
   "scripts": {

@@ -1,4 +1,4 @@
-export type PushNotificationPhase = "approval" | "completion" | "failure";
+export type PushNotificationPhase = "approval" | "input" | "completion" | "failure";
 
 export interface PushNotificationApprovalContext {
   readonly summary: string;
@@ -64,6 +64,8 @@ function phaseTitle(phase: Exclude<PushNotificationPhase, "completion">): string
   switch (phase) {
     case "approval":
       return "Approval needed";
+    case "input":
+      return "Input needed";
     case "failure":
       return "Agent failed";
   }
@@ -122,6 +124,8 @@ export function buildPushNotificationContent(input: {
         };
       }
       return { title, body: "Tap to review the approval request." };
+    case "input":
+      return { title, body: "The agent has a question. Tap to respond." };
     case "completion":
       return {
         title,

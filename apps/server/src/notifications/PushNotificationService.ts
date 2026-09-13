@@ -1,5 +1,10 @@
+import * as Clock from "effect/Clock";
+import * as Schedule from "effect/Schedule";
+import * as Semaphore from "effect/Semaphore";
+import { FcmClient } from "@t3tools/shared/agentNotifications/FcmClient";
+import * as DirectFcm from "./DirectFcm.ts";
+import { directPushPayload } from "./DirectPushPayload.ts";
 import type {
-  EnvironmentId,
   MessageId,
   OrchestrationEvent,
   PushNotificationRegistrationInput,
@@ -19,32 +24,28 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import { ProjectionThreadMessageRepository } from "../persistence/Services/ProjectionThreadMessages.ts";
 import { ProjectionThreadMessageRepositoryLive } from "../persistence/Layers/ProjectionThreadMessages.ts";
-import { eventThreadId, shouldPublishAgentAwarenessEvent } from "../relay/AgentAwarenessRelay.ts";
+import {
+  agentAwarenessPublishIdentity,
+  eventThreadId,
+  shouldPublishAgentAwarenessEvent,
+} from "../relay/AgentAwarenessRelay.ts";
 import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { forkParked } from "../serverActivation.ts";
-import {
-  buildPushNotificationContent,
-  type PushNotificationApprovalContext,
-  type PushNotificationPhase,
-} from "./PushNotificationContent.ts";
+import { type PushNotificationApprovalContext } from "./PushNotificationContent.ts";
 
-const PUSH_REGISTRATIONS_SECRET = "push-notification-registrations";
-const EXPO_PUSH_API_URL = "https://exp.host/--/api/v2/push/send";
+const PUSH_REGISTRATIONS_SECRET = "direct-fcm-notification-registrations";
 
 const StoredPushRegistrations = Schema.Array(
   Schema.Struct({
     deviceId: Schema.String,
     platform: Schema.Literal("android"),
-    expoPushToken: Schema.String,
+    fcmToken: Schema.String,
     appIdentifier: Schema.optionalKey(Schema.String),
     appVersion: Schema.optionalKey(Schema.String),
     label: Schema.String,
@@ -52,66 +53,16 @@ const StoredPushRegistrations = Schema.Array(
   }),
 );
 const StoredPushRegistrationsJson = Schema.fromJsonString(StoredPushRegistrations);
-
-type StoredPushRegistration = (typeof StoredPushRegistrations.Type)[number];
-
-const ExpoPushTicket = Schema.Struct({
-  status: Schema.Literals(["ok", "error"]),
-  message: Schema.optional(Schema.String),
-});
-
-const ExpoPushResponse = Schema.Struct({
-  data: Schema.Union([ExpoPushTicket, Schema.Array(ExpoPushTicket)]),
-});
-
-const decodeExpoPushResponse = Schema.decodeUnknownEffect(ExpoPushResponse);
 const decodeStoredPushRegistrations = Schema.decodeEffect(StoredPushRegistrationsJson);
 const encodeStoredPushRegistrations = Schema.encodeEffect(StoredPushRegistrationsJson);
 
-const notifiablePhase = (
-  phase: AgentAwarenessState["phase"],
-): "approval" | "completion" | "failure" | null => {
-  switch (phase) {
-    case "waiting_for_approval":
-      return "approval";
-    case "completed":
-      return "completion";
-    case "failed":
-      return "failure";
-    default:
-      return null;
-  }
-};
+type StoredPushRegistration = (typeof StoredPushRegistrations.Type)[number];
 
 function pushError(
   operation: "register" | "unregister" | "send",
   reason: string,
 ): PushNotificationError {
-  return new PushNotificationError({
-    operation,
-    reason: reason.trim() || "Unknown error.",
-  });
-}
-
-function pushStateIdentity(state: AgentAwarenessState | null): string {
-  return state?.phase ?? "none";
-}
-
-function shouldDeliverToPreferences(
-  preferences: PushNotificationPreferences,
-  phase: PushNotificationPhase,
-): boolean {
-  if (!preferences.notificationsEnabled) {
-    return false;
-  }
-  switch (phase) {
-    case "approval":
-      return preferences.notifyOnApproval;
-    case "completion":
-      return preferences.notifyOnCompletion;
-    case "failure":
-      return preferences.notifyOnFailure;
-  }
+  return new PushNotificationError({ operation, reason });
 }
 
 function approvalContextFromEvent(
@@ -135,66 +86,6 @@ function approvalContextFromEvent(
   };
 }
 
-function expoPushMessage(input: {
-  readonly environmentId: EnvironmentId;
-  readonly state: AgentAwarenessState;
-  readonly phase: PushNotificationPhase;
-  readonly expoPushToken: string;
-  readonly approvalContext: PushNotificationApprovalContext | null;
-  readonly assistantMessageText: string | null;
-}) {
-  const content = buildPushNotificationContent({
-    phase: input.phase,
-    threadTitle: input.state.threadTitle,
-    projectTitle: input.state.projectTitle,
-    detail: input.state.detail,
-    approvalContext: input.approvalContext,
-    assistantMessageText: input.assistantMessageText,
-  });
-  return {
-    to: input.expoPushToken,
-    title: content.title,
-    body: content.body,
-    priority: "high" as const,
-    channelId: "agent-awareness",
-    data: {
-      type: "agent-awareness",
-      environmentId: input.environmentId,
-      threadId: input.state.threadId,
-      phase: input.state.phase,
-      deepLink: input.state.deepLink,
-    },
-  };
-}
-
-function makeExpoPushRequest(message: ReturnType<typeof expoPushMessage>) {
-  return HttpClientRequest.post(EXPO_PUSH_API_URL).pipe(
-    HttpClientRequest.bodyJsonUnsafe(message),
-    HttpClientRequest.setHeader("accept", "application/json"),
-  );
-}
-
-function sendExpoPushMessage(message: ReturnType<typeof expoPushMessage>) {
-  return Effect.gen(function* () {
-    const httpClient = yield* HttpClient.HttpClient;
-    const response = yield* httpClient
-      .execute(makeExpoPushRequest(message))
-      .pipe(Effect.mapError(() => pushError("send", "Could not reach Expo Push Service.")));
-    if (response.status < 200 || response.status >= 300) {
-      return yield* pushError("send", `Expo Push Service returned HTTP ${response.status}.`);
-    }
-    const decoded = yield* response.json.pipe(
-      Effect.flatMap(decodeExpoPushResponse),
-      Effect.mapError(() => pushError("send", "Expo Push Service returned invalid JSON.")),
-    );
-    const tickets = Array.isArray(decoded.data) ? decoded.data : [decoded.data];
-    const failedTicket = tickets.find((ticket) => ticket.status === "error");
-    if (failedTicket) {
-      return yield* pushError("send", failedTicket.message ?? "Expo rejected the push token.");
-    }
-  }).pipe(Effect.provide(FetchHttpClient.layer));
-}
-
 export class PushNotificationService extends Context.Service<
   PushNotificationService,
   {
@@ -205,6 +96,7 @@ export class PushNotificationService extends Context.Service<
       input: PushNotificationUnregistrationInput,
     ) => Effect.Effect<void, PushNotificationError>;
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
+    readonly drain: Effect.Effect<void>;
   }
 >()("t3/notifications/PushNotificationService") {}
 
@@ -214,6 +106,8 @@ export const make = Effect.gen(function* () {
   const snapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const projectionThreadMessageRepository = yield* ProjectionThreadMessageRepository;
   const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
+  const fcm = yield* FcmClient;
+  const registrationLock = yield* Semaphore.make(1);
   const registrationsRef = yield* Ref.make(new Map<string, StoredPushRegistration>());
 
   const readStoredRegistrations = Effect.gen(function* () {
@@ -251,13 +145,23 @@ export const make = Effect.gen(function* () {
 
   const register: PushNotificationService["Service"]["register"] = (input) =>
     Effect.gen(function* () {
+      // Validate sender configuration before claiming this environment can deliver.
+      yield* fcm.checkConfiguration.pipe(
+        Effect.mapError(() =>
+          pushError(
+            "register",
+            "Set T3CODE_FCM_SERVICE_ACCOUNT_FILE on this environment to enable Android notifications.",
+          ),
+        ),
+      );
       const current = yield* Ref.get(registrationsRef);
       const next = new Map(current);
       next.set(input.deviceId, input);
       yield* persistRegistrations(next);
       yield* Ref.set(registrationsRef, next);
+      yield* deliveryWorker.enqueue({ replayDeviceId: input.deviceId });
       return { registered: true } as const;
-    });
+    }).pipe(registrationLock.withPermit);
 
   const unregister: PushNotificationService["Service"]["unregister"] = (input) =>
     Effect.gen(function* () {
@@ -273,12 +177,12 @@ export const make = Effect.gen(function* () {
         ),
       );
       yield* Ref.set(registrationsRef, next);
-    });
+    }).pipe(registrationLock.withPermit);
 
   const readThreadState = (threadId: ThreadId) =>
     Effect.gen(function* () {
       const thread = yield* snapshotQuery.getThreadShellById(threadId);
-      if (Option.isNone(thread)) {
+      if (Option.isNone(thread) || thread.value.archivedAt !== null) {
         return null;
       }
       const project = yield* snapshotQuery.getProjectShellById(thread.value.projectId);
@@ -301,78 +205,110 @@ export const make = Effect.gen(function* () {
   const readAssistantMessageText = (messageId: MessageId | null) =>
     messageId === null
       ? Effect.succeed(null)
-      : projectionThreadMessageRepository
-          .getByMessageId({ messageId })
-          .pipe(
-            Effect.map((message) =>
-              Option.isSome(message) && message.value.role === "assistant"
-                ? message.value.text
-                : null,
-            ),
-            Effect.orElseSucceed(() => null),
-          );
-
-  const sendForState = (input: {
-    readonly state: AgentAwarenessState;
-    readonly assistantMessageId: MessageId | null;
-    readonly approvalContext: PushNotificationApprovalContext | null;
-  }) =>
-    Effect.gen(function* () {
-      const phase = notifiablePhase(input.state.phase);
-      if (phase === null) {
-        return;
-      }
-      const environmentId = yield* serverEnvironment.getEnvironmentId;
-      const registrations = yield* Ref.get(registrationsRef);
-      const assistantMessageText =
-        phase === "completion"
-          ? yield* readAssistantMessageText(input.assistantMessageId)
-          : null;
-      yield* Effect.forEach(
-        [...registrations.values()].filter((registration) =>
-          shouldDeliverToPreferences(registration.preferences, phase),
-        ),
-        (registration) =>
-          sendExpoPushMessage(
-            expoPushMessage({
-              environmentId,
-              state: input.state,
-              phase,
-              expoPushToken: registration.expoPushToken,
-              approvalContext: input.approvalContext,
-              assistantMessageText,
-            }),
-          ).pipe(
-            Effect.tapError((error) =>
-              Effect.logWarning("Agent push notification delivery failed", {
-                deviceId: registration.deviceId,
-                phase,
-                reason: error.reason,
-              }),
-            ),
-            Effect.ignore,
+      : projectionThreadMessageRepository.getByMessageId({ messageId }).pipe(
+          Effect.map((message) =>
+            Option.isSome(message) && message.value.role === "assistant"
+              ? message.value.text
+              : null,
           ),
-        { concurrency: 4, discard: true },
-      );
-    });
+          Effect.orElseSucceed(() => null),
+        );
 
-  const stateByThread = new Map<ThreadId, string>();
+  const stateByThread = new Map<ThreadId, AgentAwarenessState>();
+  const contentByThread = new Map<
+    string,
+    { assistantMessageText: string | null; approvalContext: PushNotificationApprovalContext | null }
+  >();
+  const deliveredByDevice = new Map<string, ReadonlyArray<AgentAwarenessState>>();
+
+  const deliveryWorker = yield* makeDrainableWorker(
+    Effect.fn("PushNotificationService.deliver")(function* (job: { replayDeviceId?: string }) {
+      const registrations = yield* Ref.get(registrationsRef);
+      const environmentId = yield* serverEnvironment.getEnvironmentId;
+      const states = [...stateByThread.values()];
+      for (const registration of registrations.values()) {
+        if (job.replayDeviceId && registration.deviceId !== job.replayDeviceId) continue;
+        const previous = deliveredByDevice.get(registration.deviceId) ?? states;
+        const nowMs = yield* Clock.currentTimeMillis;
+        const data = directPushPayload({
+          environmentId,
+          registration,
+          states,
+          previousStates: previous,
+          nowMs,
+          replay: job.replayDeviceId !== undefined,
+          content: contentByThread,
+        });
+        const result = yield* fcm
+          .send({
+            token: registration.fcmToken,
+            packageName: registration.appIdentifier ?? null,
+            data,
+            alert: data.alert_id !== undefined,
+          })
+          .pipe(
+            Effect.retry({
+              times: 2,
+              schedule: Schedule.exponential("1 second"),
+              while: (error) =>
+                error.operation !== "configuration" &&
+                (error.status === null ||
+                  error.status === 401 ||
+                  error.status === 429 ||
+                  error.status >= 500),
+            }),
+            Effect.option,
+          );
+        if (Option.isNone(result)) {
+          yield* Effect.logWarning("Android notification delivery failed", {
+            deviceId: registration.deviceId,
+          });
+          continue;
+        }
+        if (result.value.unregistered) {
+          yield* registrationLock.withPermit(
+            Effect.gen(function* () {
+              const current = yield* Ref.get(registrationsRef);
+              if (current.get(registration.deviceId)?.fcmToken !== registration.fcmToken) return;
+              const next = new Map(current);
+              next.delete(registration.deviceId);
+              yield* persistRegistrations(next).pipe(Effect.ignore);
+              yield* Ref.set(registrationsRef, next);
+            }),
+          );
+        } else {
+          deliveredByDevice.set(registration.deviceId, states);
+        }
+      }
+    }),
+  );
+
   const processThread = Effect.fn("PushNotificationService.processThread")(function* (input: {
     readonly threadId: ThreadId;
     readonly approvalContext: PushNotificationApprovalContext | null;
   }) {
-    const stateContext = yield* readThreadState(input.threadId);
-    const previousIdentity = stateByThread.get(input.threadId);
-    const identity = pushStateIdentity(stateContext?.state ?? null);
-    stateByThread.set(input.threadId, identity);
-    if (previousIdentity === undefined || previousIdentity === identity || stateContext === null) {
-      return;
+    const context = yield* readThreadState(input.threadId);
+    const previous = stateByThread.get(input.threadId);
+    if (context === null) {
+      stateByThread.delete(input.threadId);
+      contentByThread.delete(input.threadId);
+    } else {
+      if (
+        agentAwarenessPublishIdentity(previous ?? null) ===
+        agentAwarenessPublishIdentity(context.state)
+      )
+        return;
+      stateByThread.set(input.threadId, context.state);
+      contentByThread.set(input.threadId, {
+        approvalContext: input.approvalContext,
+        assistantMessageText:
+          context.state.phase === "completed"
+            ? yield* readAssistantMessageText(context.assistantMessageId)
+            : null,
+      });
     }
-    const state = stateContext.state;
-    if (notifiablePhase(state.phase) === null) {
-      return;
-    }
-    yield* sendForState({ ...stateContext, approvalContext: input.approvalContext });
+    if (!previous && !context) return;
+    yield* deliveryWorker.enqueue({});
   });
 
   const seedState = Effect.gen(function* () {
@@ -382,7 +318,7 @@ export const make = Effect.gen(function* () {
     for (const thread of snapshot.threads) {
       const project = projects.get(thread.projectId);
       const state = project ? projectThreadAwareness({ environmentId, project, thread }) : null;
-      stateByThread.set(thread.id, pushStateIdentity(state));
+      if (state && thread.archivedAt === null) stateByThread.set(thread.id, state);
     }
   }).pipe(
     Effect.catch((cause) =>
@@ -390,12 +326,22 @@ export const make = Effect.gen(function* () {
     ),
   );
 
-  const worker = yield* makeDrainableWorker(processThread);
+  const worker = yield* makeDrainableWorker((input: Parameters<typeof processThread>[0]) =>
+    processThread(input).pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning("Could not project Android notification state", { cause }),
+      ),
+    ),
+  );
 
   const start: PushNotificationService["Service"]["start"] = Effect.fn(
     "PushNotificationService.start",
   )(function* () {
     yield* seedState;
+    for (const registration of (yield* Ref.get(registrationsRef)).values()) {
+      deliveredByDevice.set(registration.deviceId, [...stateByThread.values()]);
+      yield* deliveryWorker.enqueue({ replayDeviceId: registration.deviceId });
+    }
     yield* forkParked(
       Stream.runForEach(orchestrationEngine.streamDomainEvents, (event: OrchestrationEvent) => {
         const threadId = eventThreadId(event);
@@ -407,9 +353,15 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  return PushNotificationService.of({ register, unregister, start });
+  return PushNotificationService.of({
+    register,
+    unregister,
+    start,
+    drain: worker.drain.pipe(Effect.andThen(deliveryWorker.drain)),
+  });
 });
 
 export const layer = Layer.effect(PushNotificationService, make).pipe(
   Layer.provideMerge(ProjectionThreadMessageRepositoryLive),
+  Layer.provide(DirectFcm.layer),
 );

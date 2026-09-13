@@ -2,6 +2,18 @@
 
 The Android app receives Firebase Cloud Messaging (FCM) data messages. The relay sends them directly through FCM HTTP v1; an Expo Push account is not required.
 
+## This fork: direct delivery from paired environments
+
+Android uses upstream’s native alert and ongoing-card presentation with direct FCM delivery from each paired T3 environment. The app does not register Android devices with T3 Connect. The sections below about hosted relay deployment describe the upstream alternative, not a requirement for this fork.
+
+1. Register the app package in your own Firebase project. This fork uses `com.t3tools.t3code` for production and `com.fraz5094.t3code.dev` / `com.fraz5094.t3code.preview` for development and preview. Supply that project's `google-services.json` through `T3CODE_ANDROID_GOOGLE_SERVICES_FILE`, or use the fork's checked-in app configuration.
+2. Store the Firebase service-account JSON privately on each environment host. Set `T3CODE_FCM_SERVICE_ACCOUNT_FILE` to its absolute path in the environment that launches the T3 server or desktop host, then restart that host. The account needs permission to send FCM messages in the same Firebase project. Never bundle this private key in the APK or commit it.
+3. Install a new Android binary, pair it with the environment, grant Android notification permission, and enable the desired notification options in Settings. **Refresh notification registration** retries registration after changing server configuration.
+
+`google-services.json` identifies the Android app; it is not the private service-account JSON needed by the server. An Expo push token or Expo's stored FCM credentials do not configure the direct sender. This change replaces the fork's Expo delivery path; update both server and Android binary. Existing devices register their native FCM token when they reconnect.
+
+Delivery uses the same FCM client, activity aggregation, transition selection and payload size handling as the relay. Transient sends have bounded retries. The direct sender keeps its delivery baseline in memory and silently reconciles after server restart or app foregrounding; it does not provide the hosted relay's durable queue. There is one card per environment. Removing an environment on the phone clears that card and rejects further pushes from it, including while its server is unreachable.
+
 ## Android compatibility and automated checks
 
 The app's minimum is Android 7.0 (API 24), declared in `app.config.ts` and enforced by the relay's device-registration schema. Compile/target SDK versions follow the locked Expo/React Native toolchain (currently API 36). Notification channels begin at API 26; the notification permission prompt begins at API 33. Live Update promotion requires API 36 and remains subject to system settings and device support. Alerts and ordinary activity cards work below API 36.
