@@ -6,7 +6,15 @@ import type {
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 
-import type { ApnsNotificationPayload } from "./apnsDeliveryJobs.ts";
+export interface ApnsNotificationPayload {
+  readonly title: string;
+  readonly body: string;
+  readonly environmentId: string;
+  readonly threadId: string;
+  readonly deepLink: string;
+  readonly phase?: RelayAgentActivityAggregateRow["phase"] | undefined;
+  readonly updatedAt?: string | undefined;
+}
 
 export function isTerminalPhase(state: RelayAgentActivityState): boolean {
   return state.phase === "completed" || state.phase === "failed";

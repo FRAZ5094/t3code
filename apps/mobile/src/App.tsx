@@ -36,7 +36,12 @@ void SplashScreen.preventAutoHideAsync().catch(() => {
 });
 
 const appLinking = {
-  prefixes: [Linking.createURL("/"), "t3code://", "t3code-dev://", "t3code-preview://"],
+  prefixes: [
+    Linking.createURL("/"),
+    "t3code-fraz5094://",
+    "t3code-fraz5094-dev://",
+    "t3code-fraz5094-preview://",
+  ],
   // Keep the compact thread list available beneath a directly opened thread.
   config: { initialRouteName: "Home" },
   filter: shouldHandleAppLink,
@@ -89,8 +94,8 @@ function AppContent() {
             <View style={{ flex: 1 }}>
               <AndroidPushRegistrationProvider>
                 <IncomingShareProvider>
-                <Navigation linking={appLinking} theme={navigationTheme} />
-              </IncomingShareProvider>
+                  <Navigation linking={appLinking} theme={navigationTheme} />
+                </IncomingShareProvider>
               </AndroidPushRegistrationProvider>
               <ConfirmDialogHost />
               <ThreadArrangementHost />

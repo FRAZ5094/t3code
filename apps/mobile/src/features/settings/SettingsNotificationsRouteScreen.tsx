@@ -17,6 +17,7 @@ import {
   settlePromise,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { useAndroidPushRegistration } from "../agent-awareness/androidPushRegistration";
 import { supportsAgentAwarenessPush } from "../agent-awareness/capabilities";
 import {
   openAndroidLiveUpdateSettings,
@@ -57,6 +58,9 @@ function useDeviceRegistered(): boolean {
 }
 
 export function SettingsNotificationsRouteScreen() {
+  if (Platform.OS === "android") {
+    return <DirectAndroidNotificationsRouteScreen />;
+  }
   if (!hasCloudPublicConfig()) {
     return (
       <SettingsScreen title="Notifications">
@@ -493,6 +497,83 @@ function ConfiguredSettingsNotificationsRouteScreen() {
             />
           ) : null}
         </SettingsSection>
+      </ScrollView>
+    </SettingsScreen>
+  );
+}
+
+function DirectAndroidNotificationsRouteScreen() {
+  const push = useAndroidPushRegistration();
+  if (Platform.OS !== "android") return null;
+  const change = (patch: Parameters<typeof push.update>[0]) => {
+    void push
+      .update(patch)
+      .catch((error: unknown) =>
+        Alert.alert(
+          "Notifications unavailable",
+          error instanceof Error ? error.message : String(error),
+        ),
+      );
+  };
+  return (
+    <SettingsScreen title="Notifications">
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerClassName="px-5 pt-4">
+        <SettingsSection title="Notifications">
+          <SettingsSwitchRow
+            icon="bell.badge"
+            label="Device Notifications"
+            disabled={!push.supported}
+            value={push.permissionGranted && push.preferences.notificationsEnabled}
+            subtitle={
+              !push.supported
+                ? "Install the latest Android build to enable notifications"
+                : push.status === "registered"
+                  ? "Receive alerts from your paired environments"
+                  : "Connect an environment to set up delivery"
+            }
+            onValueChange={(notificationsEnabled) => change({ notificationsEnabled })}
+          />
+          <SettingsSwitchRow
+            icon="bolt.circle"
+            label="Ongoing Agent Activity"
+            disabled={!push.supported}
+            value={push.permissionGranted && push.preferences.liveActivitiesEnabled}
+            subtitle="One activity card per environment"
+            onValueChange={(liveActivitiesEnabled) => change({ liveActivitiesEnabled })}
+          />
+          {(
+            [
+              ["notifyOnApproval", "Approval requests"],
+              ["notifyOnInput", "Agent questions"],
+              ["notifyOnCompletion", "Completed tasks"],
+              ["notifyOnFailure", "Failed tasks"],
+            ] as const
+          ).map(([key, label]) => (
+            <SettingsSwitchRow
+              key={key}
+              icon="bell.badge"
+              label={label}
+              disabled={!push.supported || !push.preferences.notificationsEnabled}
+              value={push.preferences[key]}
+              onValueChange={(enabled) => change({ [key]: enabled })}
+            />
+          ))}
+          {push.error ? (
+            <Text className="px-2 text-sm text-foreground-muted">{push.error}</Text>
+          ) : null}
+          <SettingsRow
+            icon="arrow.clockwise"
+            label="Refresh notification registration"
+            onPress={() => void push.refresh()}
+          />
+        </SettingsSection>
+        {supportsAndroidLiveUpdateSettings() ? (
+          <SettingsRow
+            icon="gearshape"
+            label="Android Live Update settings"
+            onPress={() => void openAndroidLiveUpdateSettings()}
+          />
+        ) : null}
       </ScrollView>
     </SettingsScreen>
   );

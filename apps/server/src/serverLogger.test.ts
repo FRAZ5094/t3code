@@ -54,6 +54,7 @@ const configLayer = (overrides: Partial<ServerConfig.ServerConfig["Service"]>) =
         traceMaxFiles: 1,
         otlpTracesUrl: undefined,
         otlpMetricsUrl: undefined,
+        prometheusMetricsEnabled: false,
         otlpLogsUrl: undefined,
         otlpTracesExport: DEFAULT_SIGNAL_EXPORT,
         otlpMetricsExport: DEFAULT_SIGNAL_EXPORT,

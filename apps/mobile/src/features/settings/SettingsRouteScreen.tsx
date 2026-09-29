@@ -121,6 +121,11 @@ function LocalSettingsRouteScreen() {
           />
         </SettingsSection>
 
+        {Platform.OS === "android" ? (
+          <SettingsSection title="Notifications">
+            <SettingsRow icon="bell.badge" label="Notifications" target="SettingsNotifications" />
+          </SettingsSection>
+        ) : null}
         <SettingsIndexSections />
       </ScrollView>
     </View>

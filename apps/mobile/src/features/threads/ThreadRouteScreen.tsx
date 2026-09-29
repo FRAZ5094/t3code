@@ -96,6 +96,7 @@ import { threadRouteIsHydrating } from "./thread-route-hydration";
 
 function ThreadHeader(
   props: Parameters<typeof useThreadHeaderOptions>[0] & {
+    readonly threadSpeech: ReturnType<typeof useThreadSpeech>;
     readonly hasThreadCwd: boolean;
     readonly hasWorkspaceRoot: boolean;
     readonly fileInspectorSupported: boolean;
@@ -111,6 +112,12 @@ function ThreadHeader(
   const native = useThreadHeaderOptions(props);
   const androidHeaderActions = useMemo<ReadonlyArray<ScreenHeaderAction>>(() => {
     const actions: ScreenHeaderAction[] = [];
+    actions.push({
+      accessibilityLabel: props.threadSpeech.enabled ? "Disable read aloud" : "Enable read aloud",
+      icon: props.threadSpeech.enabled ? "speaker.wave.2" : "speaker.slash",
+      onPress: props.threadSpeech.toggle,
+      selected: props.threadSpeech.enabled,
+    });
     if (props.onReturnToThread) {
       actions.push({
         accessibilityLabel: "Return to chat",
@@ -141,6 +148,8 @@ function ThreadHeader(
     });
     return actions;
   }, [
+    props.threadSpeech.enabled,
+    props.threadSpeech.toggle,
     props.inspectorMode,
     panes.auxiliaryPaneVisible,
     props.onOpenFilesInspector,
@@ -161,18 +170,26 @@ function ThreadHeader(
         options={native.options}
         optionsVersion={props.gitControls.projectScripts}
         trailing={
-          props.fileInspectorSupported && props.hasThreadCwd ? (
-            <ScreenHeaderButton
-              accessibilityLabel={
-                props.inspectorMode !== null && panes.auxiliaryPaneVisible
-                  ? "Hide inspector"
-                  : "Show inspector"
-              }
-              icon="sidebar.right"
-              selected={props.inspectorMode !== null && panes.auxiliaryPaneVisible}
-              onPress={props.onToggleInspector}
-            />
-          ) : null
+          <>
+            {Platform.OS === "android" && props.threadSpeech.enabled ? (
+              <ThreadSpeechSpeedMenu
+                rate={props.threadSpeech.rate}
+                onChange={props.threadSpeech.setRate}
+              />
+            ) : null}
+            {props.fileInspectorSupported && props.hasThreadCwd ? (
+              <ScreenHeaderButton
+                accessibilityLabel={
+                  props.inspectorMode !== null && panes.auxiliaryPaneVisible
+                    ? "Hide inspector"
+                    : "Show inspector"
+                }
+                icon="sidebar.right"
+                selected={props.inspectorMode !== null && panes.auxiliaryPaneVisible}
+                onPress={props.onToggleInspector}
+              />
+            ) : null}
+          </>
         }
         onBack={
           layout.usesSplitView
@@ -1061,6 +1078,7 @@ function ThreadRouteContent(
     <>
       {activeInspectorRenderer ? <InspectorPaneRoleActivation /> : null}
       <ThreadHeader
+        threadSpeech={threadSpeech}
         title={selectedThread.title}
         subtitle={headerSubtitle}
         headerColor={headerColor}

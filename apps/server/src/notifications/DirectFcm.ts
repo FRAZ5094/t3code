@@ -15,7 +15,7 @@ import { WebCrypto } from "@t3tools/shared/agentNotifications/WebCrypto";
 const configuration = Layer.effect(
   FcmConfiguration,
   Effect.gen(function* () {
-    const path = yield* Config.option(Config.string("T3CODE_FCM_SERVICE_ACCOUNT_FILE"));
+    const path = yield* Config.option(Config.String("T3CODE_FCM_SERVICE_ACCOUNT_FILE"));
     if (Option.isNone(path)) return { fcmServiceAccount: null };
     const fs = yield* FileSystem.FileSystem;
     const json = yield* fs
