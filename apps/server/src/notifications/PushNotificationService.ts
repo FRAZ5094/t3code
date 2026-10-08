@@ -5,8 +5,7 @@ import { FcmClient } from "@t3tools/shared/agentNotifications/FcmClient";
 import * as DirectFcm from "./DirectFcm.ts";
 import { directPushPayload } from "./DirectPushPayload.ts";
 import type {
-  MessageId,
-  OrchestrationEvent,
+  OrchestrationV2DomainEvent,
   PushNotificationRegistrationInput,
   PushNotificationRegistrationResult,
   PushNotificationUnregistrationInput,
@@ -14,7 +13,7 @@ import type {
 } from "@t3tools/contracts";
 import { PushNotificationError, PushNotificationPreferences } from "@t3tools/contracts";
 import type { AgentAwarenessState } from "@t3tools/shared/agentAwareness";
-import { projectThreadAwareness } from "@t3tools/shared/agentAwareness";
+import { projectThreadAwarenessV2 } from "@t3tools/shared/agentAwareness";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -27,15 +26,9 @@ import * as Stream from "effect/Stream";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
-import { ProjectionThreadMessageRepository } from "../persistence/Services/ProjectionThreadMessages.ts";
-import { ProjectionThreadMessageRepositoryLive } from "../persistence/Layers/ProjectionThreadMessages.ts";
-import {
-  agentAwarenessPublishIdentity,
-  eventThreadId,
-  shouldPublishAgentAwarenessEvent,
-} from "../relay/AgentAwarenessRelay.ts";
-import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
-import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { shouldPublishAgentAwarenessEvent } from "../relay/AgentAwarenessRelay.ts";
+import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import * as ProjectService from "../project/ProjectService.ts";
 import { forkParked } from "../serverActivation.ts";
 import { type PushNotificationApprovalContext } from "./PushNotificationContent.ts";
 
@@ -65,25 +58,10 @@ function pushError(
   return new PushNotificationError({ operation, reason });
 }
 
-function approvalContextFromEvent(
-  event: OrchestrationEvent,
-): PushNotificationApprovalContext | null {
-  if (event.type !== "thread.activity-appended") {
-    return null;
-  }
-  const activity = event.payload.activity;
-  if (activity.kind !== "approval.requested") {
-    return null;
-  }
-  const payload =
-    typeof activity.payload === "object" && activity.payload !== null
-      ? (activity.payload as Record<string, unknown>)
-      : null;
-  return {
-    summary: activity.summary,
-    ...(typeof payload?.detail === "string" ? { detail: payload.detail } : {}),
-    ...(typeof payload?.appName === "string" ? { appName: payload.appName } : {}),
-  };
+function agentAwarenessPublishIdentity(state: AgentAwarenessState | null): string {
+  if (state === null) return "null";
+  const { updatedAt: _updatedAt, ...meaningfulState } = state;
+  return JSON.stringify(meaningfulState);
 }
 
 export class PushNotificationService extends Context.Service<
@@ -103,9 +81,8 @@ export class PushNotificationService extends Context.Service<
 export const make = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
-  const snapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
-  const projectionThreadMessageRepository = yield* ProjectionThreadMessageRepository;
-  const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
+  const threads = yield* ThreadManagement.ThreadManagementService;
+  const projects = yield* ProjectService.ProjectService;
   const fcm = yield* FcmClient;
   const registrationLock = yield* Semaphore.make(1);
   const registrationsRef = yield* Ref.make(new Map<string, StoredPushRegistration>());
@@ -181,38 +158,58 @@ export const make = Effect.gen(function* () {
 
   const readThreadState = (threadId: ThreadId) =>
     Effect.gen(function* () {
-      const thread = yield* snapshotQuery.getThreadShellById(threadId);
-      if (Option.isNone(thread) || thread.value.archivedAt !== null) {
-        return null;
-      }
-      const project = yield* snapshotQuery.getProjectShellById(thread.value.projectId);
-      if (Option.isNone(project)) {
-        return null;
-      }
-      const state = projectThreadAwareness({
+      const thread = yield* threads.getThreadShell(threadId);
+      if (thread === null || thread.archivedAt !== null) return null;
+      const project = yield* projects.getById(thread.projectId);
+      if (Option.isNone(project)) return null;
+      const state = projectThreadAwarenessV2({
         environmentId: yield* serverEnvironment.getEnvironmentId,
         project: project.value,
-        thread: thread.value,
+        thread,
       });
-      return state === null
-        ? null
-        : {
-            state,
-            assistantMessageId: thread.value.latestTurn?.assistantMessageId ?? null,
-          };
+      return state === null ? null : { state, thread };
     });
 
-  const readAssistantMessageText = (messageId: MessageId | null) =>
-    messageId === null
+  const readAssistantMessageText = (
+    thread: NonNullable<Effect.Success<ReturnType<typeof readThreadState>>>["thread"],
+  ) =>
+    thread.latestRunId === null
       ? Effect.succeed(null)
-      : projectionThreadMessageRepository.getByMessageId({ messageId }).pipe(
-          Effect.map((message) =>
-            Option.isSome(message) && message.value.role === "assistant"
-              ? message.value.text
-              : null,
-          ),
-          Effect.orElseSucceed(() => null),
-        );
+      : threads
+          .getThreadRecords(thread.id, ["messages"], {
+            messageRoles: ["assistant"],
+            messageRunIds: [thread.latestRunId],
+          })
+          .pipe(
+            Effect.map(({ messages }) => messages.at(-1)?.text ?? null),
+            Effect.orElseSucceed(() => null),
+          );
+
+  const readApprovalContext = (
+    thread: NonNullable<Effect.Success<ReturnType<typeof readThreadState>>>["thread"],
+  ) =>
+    thread.pendingRuntimeRequest === null
+      ? Effect.succeed(null)
+      : threads
+          .getThreadRecords(thread.id, ["turnItems"], {
+            turnItemTypes: ["approval_request"],
+          })
+          .pipe(
+            Effect.map(({ turnItems }): PushNotificationApprovalContext | null => {
+              const item = turnItems.findLast(
+                (item) =>
+                  item.type === "approval_request" &&
+                  item.requestId === thread.pendingRuntimeRequest?.id,
+              );
+              if (item?.type !== "approval_request") return null;
+              return {
+                summary: item.title ?? "Approval needed",
+                ...(item.prompt === undefined ? {} : { detail: item.prompt }),
+                ...(item.appName === undefined ? {} : { appName: item.appName }),
+              };
+            }),
+            Effect.orElseSucceed(() => null),
+          );
 
   const stateByThread = new Map<ThreadId, AgentAwarenessState>();
   const contentByThread = new Map<
@@ -285,7 +282,6 @@ export const make = Effect.gen(function* () {
 
   const processThread = Effect.fn("PushNotificationService.processThread")(function* (input: {
     readonly threadId: ThreadId;
-    readonly approvalContext: PushNotificationApprovalContext | null;
   }) {
     const context = yield* readThreadState(input.threadId);
     const previous = stateByThread.get(input.threadId);
@@ -300,10 +296,13 @@ export const make = Effect.gen(function* () {
         return;
       stateByThread.set(input.threadId, context.state);
       contentByThread.set(input.threadId, {
-        approvalContext: input.approvalContext,
+        approvalContext:
+          context.state.phase === "waiting_for_approval"
+            ? yield* readApprovalContext(context.thread)
+            : null,
         assistantMessageText:
           context.state.phase === "completed"
-            ? yield* readAssistantMessageText(context.assistantMessageId)
+            ? yield* readAssistantMessageText(context.thread)
             : null,
       });
     }
@@ -313,11 +312,14 @@ export const make = Effect.gen(function* () {
 
   const seedState = Effect.gen(function* () {
     const environmentId = yield* serverEnvironment.getEnvironmentId;
-    const snapshot = yield* snapshotQuery.getShellSnapshot();
-    const projects = new Map(snapshot.projects.map((project) => [project.id, project]));
+    const [snapshot, projectSnapshot] = yield* Effect.all([
+      threads.getShellSnapshot(),
+      projects.snapshot,
+    ]);
+    const projectById = new Map(projectSnapshot.projects.map((project) => [project.id, project]));
     for (const thread of snapshot.threads) {
-      const project = projects.get(thread.projectId);
-      const state = project ? projectThreadAwareness({ environmentId, project, thread }) : null;
+      const project = projectById.get(thread.projectId);
+      const state = project ? projectThreadAwarenessV2({ environmentId, project, thread }) : null;
       if (state && thread.archivedAt === null) stateByThread.set(thread.id, state);
     }
   }).pipe(
@@ -343,12 +345,12 @@ export const make = Effect.gen(function* () {
       yield* deliveryWorker.enqueue({ replayDeviceId: registration.deviceId });
     }
     yield* forkParked(
-      Stream.runForEach(orchestrationEngine.streamDomainEvents, (event: OrchestrationEvent) => {
-        const threadId = eventThreadId(event);
-        if (threadId === null || !shouldPublishAgentAwarenessEvent(event)) {
+      Stream.runForEach(threads.streamDomainEvents, (event: OrchestrationV2DomainEvent) => {
+        const threadId = event.threadId;
+        if (!shouldPublishAgentAwarenessEvent(event)) {
           return Effect.void;
         }
-        return worker.enqueue({ threadId, approvalContext: approvalContextFromEvent(event) });
+        return worker.enqueue({ threadId });
       }),
     );
   });
@@ -362,6 +364,5 @@ export const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(PushNotificationService, make).pipe(
-  Layer.provideMerge(ProjectionThreadMessageRepositoryLive),
   Layer.provide(DirectFcm.layer),
 );

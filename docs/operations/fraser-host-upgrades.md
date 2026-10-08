@@ -56,6 +56,12 @@ Do not paste these placeholders into a build. M5's recovered, working values are
 
 If a build configuration file is missing, recover the existing values from the last working installation before replacing it. M5's original build contained the configuration even though its source checkout had no `.env.local`. Compare the old and new packaged desktop, web and server bundles, not just the source config. Clerk publishable configuration is distinct from Firebase's private service-account key; no Clerk secret key is needed for this desktop build.
 
+## Orchestrator V2 rollout
+
+Build the phone app, desktop app, and standalone servers from the same merged fork revision before a controlled rollout. V2 uses orchestration protocol 2. A protocol 1 phone or desktop client cannot connect to a protocol 2 server, and a V2 client cannot connect to a V1 server. The package version alone does not identify protocol compatibility.
+
+On first start, V2 copies the existing `state.sqlite` to `statev2.sqlite` when the V2 database is absent and migrates the copy. Back up the complete T3 home before an authorized deployment. The old database remains, but subsequent V2 work does not update it, so restoring an old binary does not recover new V2 history. Follow the [thread migration guide](../user/thread-migration.md) for resuming old threads; provider sessions and checkpoints are not carried into V2.
+
 ## Build before interrupting a host
 
 1. Inspect checkout changes and the launcher. Use a separate checkout/worktree pinned to the requested SHA; do not reset somebody else's work.

@@ -6,11 +6,14 @@ import * as Layer from "effect/Layer";
 import * as Metric from "effect/Metric";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
-import { HttpRouter, HttpServerResponse } from "effect/unstable/http";
-import { PrometheusMetrics } from "effect/unstable/observability";
+import { HttpRouter, HttpServerResponse } from "effect/http";
+import { PrometheusMetrics } from "effect/observability";
 
 import * as ServerConfig from "../config.ts";
-import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as ResourceTelemetry from "../resourceTelemetry/ResourceTelemetry.ts";
 import {
   agentsRunning,
@@ -61,13 +64,34 @@ const seriesKey = (...parts: ReadonlyArray<string>) => parts.join("\u0000");
 const updateRuntimeMetrics = Effect.fn("PrometheusRoute.updateRuntimeMetrics")(function* (
   observedProviderSeries: Ref.Ref<ReadonlySet<string>>,
 ) {
-  const projection = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+  const projection = yield* ProjectionStore.ProjectionStoreV2;
+  const projectStore = yield* ProjectStore.ProjectStoreV2;
+  const instances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
+  const sql = yield* SqlClient.SqlClient;
   const telemetry = yield* ResourceTelemetry.ResourceTelemetry;
-  const shell = yield* projection.getShellSnapshot();
+  const [shell, projectShells, providerInstances, sessionCounts] = yield* Effect.all([
+    projection.getShellSnapshot(),
+    projectStore.listShells(),
+    instances.listInstances,
+    sql<{ driver: string; status: string; count: number }>`
+      SELECT sessions.driver, sessions.status, COUNT(*) AS count
+      FROM orchestration_v2_projection_provider_sessions AS sessions
+      WHERE sessions.status != 'stopped' AND EXISTS (
+        SELECT 1 FROM orchestration_v2_projection_provider_session_bindings AS binding
+        JOIN orchestration_v2_projection_threads AS thread ON thread.thread_id = binding.thread_id
+        WHERE binding.provider_session_id = sessions.provider_session_id
+          AND thread.archived_at IS NULL AND thread.deleted_at IS NULL
+      )
+      GROUP BY sessions.driver, sessions.status
+    `,
+  ]);
+  const driverByInstance = new Map(
+    providerInstances.map((instance) => [instance.instanceId, instance.driverKind]),
+  );
 
   yield* Effect.all(
     [
-      setGauge(projects, shell.projects.length),
+      setGauge(projects, projectShells.length),
       setGauge(threads, shell.threads.length),
       setGauge(
         worktreesActive,
@@ -84,21 +108,20 @@ const updateRuntimeMetrics = Effect.fn("PrometheusRoute.updateRuntimeMetrics")(f
   const sessions = new Map<string, number>();
   const activeTurns = new Map<string, number>();
   const waitingTurns = new Map<string, number>();
+  for (const row of sessionCounts) {
+    sessions.set(seriesKey(row.driver, row.status), row.count);
+  }
   for (const thread of shell.threads) {
-    if (thread.session === null) continue;
-    const provider = thread.session.providerName ?? "unknown";
-    const sessionKey = seriesKey(provider, thread.session.status);
-    sessions.set(sessionKey, (sessions.get(sessionKey) ?? 0) + 1);
-    if (thread.session.activeTurnId !== null) {
-      activeTurns.set(provider, (activeTurns.get(provider) ?? 0) + 1);
-      if (thread.hasPendingApprovals) {
-        const key = seriesKey(provider, "approval");
-        waitingTurns.set(key, (waitingTurns.get(key) ?? 0) + 1);
-      }
-      if (thread.hasPendingUserInput) {
-        const key = seriesKey(provider, "user-input");
-        waitingTurns.set(key, (waitingTurns.get(key) ?? 0) + 1);
-      }
+    if (thread.activeRunId === null) continue;
+    const provider = driverByInstance.get(thread.providerInstanceId) ?? "unknown";
+    activeTurns.set(provider, (activeTurns.get(provider) ?? 0) + 1);
+    if (
+      thread.pendingRuntimeRequest !== null &&
+      thread.pendingRuntimeRequest.kind !== "auth_refresh"
+    ) {
+      const reason = thread.pendingRuntimeRequest.kind === "user_input" ? "user-input" : "approval";
+      const key = seriesKey(provider, reason);
+      waitingTurns.set(key, (waitingTurns.get(key) ?? 0) + 1);
     }
   }
 
@@ -186,16 +209,19 @@ const updateRuntimeMetrics = Effect.fn("PrometheusRoute.updateRuntimeMetrics")(f
   );
 });
 
-export const prometheusMetricsRouteLayer = Layer.unwrap(
+export const layer = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
     if (!config.prometheusMetricsEnabled) return Layer.empty;
 
     const observedProviderSeries = yield* Ref.make<ReadonlySet<string>>(new Set());
+    const services =
+      yield* Effect.context<Effect.Services<ReturnType<typeof updateRuntimeMetrics>>>();
     return HttpRouter.add(
       "GET",
       "/metrics",
       updateRuntimeMetrics(observedProviderSeries).pipe(
+        Effect.provide(services),
         Effect.andThen(PrometheusMetrics.format()),
         Effect.map((body) =>
           HttpServerResponse.text(body, {

@@ -4,16 +4,13 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import {
-  FcmConfiguration,
-  layer as clientLayer,
-} from "@t3tools/shared/agentNotifications/FcmClient";
-import { layer as signerLayer } from "@t3tools/shared/agentNotifications/FcmAssertionSigner";
-import { WebCrypto } from "@t3tools/shared/agentNotifications/WebCrypto";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import * as FcmClient from "@t3tools/shared/agentNotifications/FcmClient";
+import * as FcmAssertionSigner from "@t3tools/shared/agentNotifications/FcmAssertionSigner";
+import * as WebCrypto from "@t3tools/shared/agentNotifications/WebCrypto";
 
 const configuration = Layer.effect(
-  FcmConfiguration,
+  FcmClient.FcmConfiguration,
   Effect.gen(function* () {
     const path = yield* Config.option(Config.String("T3CODE_FCM_SERVICE_ACCOUNT_FILE"));
     if (Option.isNone(path)) return { fcmServiceAccount: null };
@@ -31,10 +28,12 @@ const configuration = Layer.effect(
   }),
 );
 
-export const layer = clientLayer.pipe(
+export const layer = FcmClient.layer.pipe(
   Layer.provide([
     configuration,
     FetchHttpClient.layer,
-    signerLayer.pipe(Layer.provide(Layer.succeed(WebCrypto, { subtle: globalThis.crypto.subtle }))),
+    FcmAssertionSigner.layer.pipe(
+      Layer.provide(Layer.succeed(WebCrypto.WebCrypto, { subtle: globalThis.crypto.subtle })),
+    ),
   ]),
 );
