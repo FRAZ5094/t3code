@@ -29,6 +29,7 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
+import { externalRequestsDisabled } from "../externalRequests.ts";
 import { getTelemetryIdentifier } from "./Identify.ts";
 
 interface BufferedAnalyticsEvent {
@@ -73,7 +74,10 @@ const TelemetryEnvConfig = Config.all({
   posthogHost: Config.String("T3CODE_POSTHOG_HOST").pipe(
     Config.withDefault("https://us.i.posthog.com"),
   ),
-  enabled: Config.Boolean("T3CODE_TELEMETRY_ENABLED").pipe(Config.withDefault(true)),
+  enabled: Config.all({
+    telemetryEnabled: Config.Boolean("T3CODE_TELEMETRY_ENABLED").pipe(Config.withDefault(true)),
+    externalRequestsDisabled,
+  }).pipe(Config.map((flags) => flags.telemetryEnabled && !flags.externalRequestsDisabled)),
   flushBatchSize: Config.Number("T3CODE_TELEMETRY_FLUSH_BATCH_SIZE").pipe(Config.withDefault(20)),
   maxBufferedEvents: Config.Number("T3CODE_TELEMETRY_MAX_BUFFERED_EVENTS").pipe(
     Config.withDefault(1_000),

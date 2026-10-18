@@ -28,6 +28,10 @@ import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { OtlpTracer, OtlpSerialization } from "effect/observability";
 
 import * as ServerConfig from "./config.ts";
+import {
+  externalRequestsDisabled,
+  LOCAL_ONLY_CONTENT_SECURITY_POLICY,
+} from "./externalRequests.ts";
 import { ASSET_ROUTE_PREFIX, resolveAsset } from "./assets/AssetAccess.ts";
 import { githubMediaResponse } from "./assets/GitHubMediaFetch.ts";
 import { statMediaFile, streamMediaFile, type OpenMediaFile } from "./assets/MediaFile.ts";
@@ -542,7 +546,7 @@ const streamStaticFile = (file: FileSystem.File, size: bigint) =>
   );
 
 const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
-  function* (immutableBuildAssets: ReadonlySet<string>) {
+  function* (immutableBuildAssets: ReadonlySet<string>, localOnly: boolean) {
     const request = yield* HttpServerRequest.HttpServerRequest;
     const url = HttpServerRequest.toURL(request);
 
@@ -623,6 +627,9 @@ const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
     const headers: Record<string, string> = {
       "Cache-Control": immutable ? "public, max-age=31536000, immutable" : "no-cache",
     };
+    if (isHtml && localOnly) {
+      headers["Content-Security-Policy"] = LOCAL_ONLY_CONTENT_SECURITY_POLICY;
+    }
     // Deployments can preserve HTML size and mtime while changing its bundle URLs.
     const modifiedAt = isHtml ? undefined : Option.getOrUndefined(fileInfo.mtime);
     const etag = modifiedAt
@@ -673,7 +680,9 @@ const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
 
 // Read the installed build's manifest once. Unknown files use revalidation.
 export const layerStaticAndDevRoute = Layer.unwrap(
-  loadImmutableBuildAssets.pipe(
-    Effect.map((assets) => HttpRouter.add("GET", "*", handleStaticAndDevRequest(assets))),
-  ),
+  Effect.gen(function* () {
+    const assets = yield* loadImmutableBuildAssets;
+    const localOnly = yield* externalRequestsDisabled;
+    return HttpRouter.add("GET", "*", handleStaticAndDevRequest(assets, localOnly));
+  }),
 );

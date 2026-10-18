@@ -56,6 +56,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { writeFileStringAtomically } from "./atomicWrite.ts";
 import { resolveSymlinkTarget } from "@t3tools/shared/symlink";
 import * as ServerConfig from "./config.ts";
+import { externalRequestsDisabled } from "./externalRequests.ts";
 import { type DeepPartial, deepMerge } from "@t3tools/shared/Struct";
 import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJson";
 import {
@@ -671,6 +672,15 @@ const make = Effect.gen(function* () {
   const changesPubSub = yield* PubSub.unbounded<ServerSettings>();
   const startedRef = yield* Ref.make(false);
   const startedDeferred = yield* Deferred.make<void, ServerSettingsError>();
+  // The environment variable outranks the stored toggle without rewriting it,
+  // so the same T3 home keeps its preference when the variable is removed.
+  const updateChecksBlocked = yield* externalRequestsDisabled;
+  const resolveSettings = (settings: ServerSettings): ServerSettings =>
+    resolveTextGenerationProvider(
+      updateChecksBlocked && settings.enableProviderUpdateChecks
+        ? { ...settings, enableProviderUpdateChecks: false }
+        : settings,
+    );
   const watcherScope = yield* Scope.make("sequential");
   yield* Effect.addFinalizer(() => Scope.close(watcherScope, Exit.void));
 
@@ -983,7 +993,7 @@ const make = Effect.gen(function* () {
           ),
         ),
       ),
-      Stream.map(resolveTextGenerationProvider),
+      Stream.map(resolveSettings),
     );
 
   type SecretChange = {
@@ -1278,7 +1288,7 @@ const make = Effect.gen(function* () {
         );
         yield* Cache.set(settingsCache, cacheKey, next);
         yield* emitChange(next);
-        return resolveTextGenerationProvider(materialized);
+        return resolveSettings(materialized);
       }),
     );
 
@@ -1286,7 +1296,7 @@ const make = Effect.gen(function* () {
     writeSemaphore.withPermits(1)(
       getSettingsFromCache.pipe(
         Effect.flatMap(materializeProviderEnvironmentSecrets),
-        Effect.map(resolveTextGenerationProvider),
+        Effect.map(resolveSettings),
         Effect.flatMap(use),
       ),
     );
@@ -1402,7 +1412,7 @@ const make = Effect.gen(function* () {
     ready: Deferred.await(startedDeferred),
     getSettings: getSettingsFromCache.pipe(
       Effect.flatMap(materializeProviderEnvironmentSecrets),
-      Effect.map(resolveTextGenerationProvider),
+      Effect.map(resolveSettings),
     ),
     updateSettings: (patch) =>
       updateAndPersistSettings((current) =>

@@ -130,6 +130,43 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
     }),
   );
 
+  it.effect("T3CODE_NO_EXTERNAL_REQUESTS stops delivery even with telemetry enabled", () =>
+    Effect.gen(function* () {
+      const batches: Array<ReadonlyArray<{ readonly uuid: string }>> = [];
+      const layerRuntime = AnalyticsService.layer.pipe(
+        Layer.provideMerge(
+          ServerConfig.ServerConfig.layerTest(process.cwd(), { prefix: "t3-telemetry-blocked-" }),
+        ),
+        Layer.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromUnknown({
+              T3CODE_TELEMETRY_ENABLED: true,
+              T3CODE_NO_EXTERNAL_REQUESTS: true,
+              T3CODE_POSTHOG_KEY: "phc_test_key",
+              T3CODE_POSTHOG_HOST: "http://localhost",
+            }),
+          ),
+        ),
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.succeed(HostProcessPlatform, "win32"),
+            Layer.succeed(HostProcessArchitecture, "x64"),
+            layerAcceptThenFailClient(batches),
+          ),
+        ),
+      );
+
+      yield* Effect.gen(function* () {
+        const analytics = yield* AnalyticsService.AnalyticsService;
+        yield* analytics.record("test.blocked");
+        yield* analytics.flush;
+        yield* TestClock.adjust("1 minute");
+      }).pipe(Effect.provide(layerRuntime));
+
+      assert.equal(batches.length, 0);
+    }),
+  );
+
   it.effect("flush drains all buffered events across multiple batches", () =>
     Effect.gen(function* () {
       const capturedRequests: Array<RecordedBatchRequest> = [];

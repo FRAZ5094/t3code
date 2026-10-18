@@ -54,6 +54,7 @@ import { HttpClient, HttpClientResponse } from "effect/http";
 
 import { writeFileStringAtomically } from "../atomicWrite.ts";
 import * as ServerConfig from "../config.ts";
+import { externalRequestsDisabled } from "../externalRequests.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as ServerSettings from "../serverSettings.ts";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
@@ -218,6 +219,7 @@ export const make = Effect.gen(function* () {
   const hostEnvironment = yield* HostProcessEnvironment;
   const platform = yield* HostProcessPlatform;
   const cursorAccountReader = yield* CursorUsageReader.CursorAccountReader;
+  const pricingDownloadBlocked = yield* externalRequestsDisabled;
 
   const fileCache: ScanCache = new Map();
   const antigravityCache = makeAntigravityUsageCache();
@@ -292,6 +294,9 @@ export const make = Effect.gen(function* () {
         }
       }
     }
+
+    // Without the download, only the on-disk snapshot and custom rates price usage.
+    if (pricingDownloadBlocked) return;
 
     const fetched = yield* httpClient.get(LITELLM_RATES_URL).pipe(
       Effect.flatMap(HttpClientResponse.filterStatusOk),

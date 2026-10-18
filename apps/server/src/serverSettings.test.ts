@@ -12,6 +12,7 @@ import {
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { assert, it } from "@effect/vitest";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
@@ -131,6 +132,40 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       assert.equal(persisted.responseStreamingMode, "turn");
       assert.deepEqual(persisted.projectSettingsOverrides, settings.projectSettingsOverrides);
     }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect(
+    "T3CODE_NO_EXTERNAL_REQUESTS reports update checks off without rewriting the file",
+    () =>
+      Effect.gen(function* () {
+        const config = yield* ServerConfig.ServerConfig;
+        const fs = yield* FileSystem.FileSystem;
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        yield* fs.writeFileString(config.settingsPath, `{ "enableProviderUpdateChecks": true }`);
+
+        assert.isFalse((yield* service.getSettings).enableProviderUpdateChecks);
+        const updated = yield* service.updateSettings({ responseStreamingMode: "turn" });
+        assert.isFalse(updated.enableProviderUpdateChecks);
+        assert.isFalse(
+          (yield* service.withSettingsSnapshot(Effect.succeed)).enableProviderUpdateChecks,
+        );
+
+        const persisted = yield* decodeServerSettingsJson(
+          yield* fs.readFileString(config.settingsPath),
+        );
+        assert.isTrue(persisted.enableProviderUpdateChecks);
+        assert.equal(persisted.responseStreamingMode, "turn");
+      }).pipe(
+        Effect.provide(
+          layerServerSettings().pipe(
+            Layer.provide(
+              ConfigProvider.layer(
+                ConfigProvider.fromUnknown({ T3CODE_NO_EXTERNAL_REQUESTS: true }),
+              ),
+            ),
+          ),
+        ),
+      ),
   );
 
   it.effect("saves through a symlinked settings file without replacing the link", () =>

@@ -19,6 +19,7 @@ import {
   type UsageSummaryInput,
 } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -1567,6 +1568,36 @@ describe("UsageService", () => {
       assert.strictEqual(refreshed.status, "fresh");
       assert.strictEqual(refreshed.knownModels, 1);
     }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
+  );
+
+  it.live("never downloads the rate table when external requests are off", () =>
+    Effect.gen(function* () {
+      const { transcript, settings, home } = yield* setup;
+      yield* Effect.promise(() => NodeFSP.writeFile(transcript, claudeLine(1, 5)));
+
+      let ratesFetches = 0;
+      const service = yield* UsageService.make.pipe(
+        Effect.provide(
+          layerService({
+            prefix: "usage-service-rates-blocked-test",
+            home,
+            settings,
+            onRatesFetch: () => {
+              ratesFetches += 1;
+            },
+          }),
+        ),
+        Effect.provide(
+          ConfigProvider.layer(ConfigProvider.fromUnknown({ T3CODE_NO_EXTERNAL_REQUESTS: true })),
+        ),
+      );
+
+      const summary = yield* service.readSummary({ ...WINDOW, awaitRefresh: true });
+      const refreshed = yield* service.refreshRates;
+      assert.strictEqual(ratesFetches, 0);
+      assert.strictEqual(summary.pricing.status, "unavailable");
+      assert.strictEqual(refreshed.status, "unavailable");
+    }).pipe(Effect.scoped),
   );
 
   it.live("does not orphan an in-flight scan when its first caller is interrupted", () =>

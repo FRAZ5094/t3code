@@ -3,6 +3,7 @@ import { describe, vi } from "vite-plus/test";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -29,6 +30,7 @@ import {
   withUntracedRequests,
 } from "./http.ts";
 import * as ServerHttp from "./http.ts";
+import { LOCAL_ONLY_CONTENT_SECURITY_POLICY } from "./externalRequests.ts";
 
 describe("untraced requests", () => {
   it.effect("drops the HTTP server span for browser trace exports, query string included", () => {
@@ -184,6 +186,33 @@ it.layer(
       expect(changed.status).toBe(200);
       expect(changed.headers["etag"]).not.toBe(etag);
       expect(yield* changed.text).toContain("next build");
+    }),
+  );
+
+  it.effect("locks the app shell to its own origin only when external requests are off", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const staticDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-static-csp-" });
+      yield* fs.writeFileString(path.join(staticDir, "index.html"), "<html>app</html>");
+      yield* fs.writeFileString(path.join(staticDir, "app.js"), "export {};");
+
+      const localOnly = yield* makeStaticRequest(staticDir).pipe(
+        Effect.provide(
+          ConfigProvider.layer(ConfigProvider.fromUnknown({ T3CODE_NO_EXTERNAL_REQUESTS: true })),
+        ),
+      );
+      for (const resource of ["/", "/threads/example"]) {
+        const response = yield* localOnly(resource);
+        expect(response.headers["content-security-policy"]).toBe(
+          LOCAL_ONLY_CONTENT_SECURITY_POLICY,
+        );
+      }
+      const script = yield* localOnly("/app.js");
+      expect(script.headers["content-security-policy"]).toBeUndefined();
+
+      const normal = yield* makeStaticRequest(staticDir);
+      expect((yield* normal("/")).headers["content-security-policy"]).toBeUndefined();
     }),
   );
 
