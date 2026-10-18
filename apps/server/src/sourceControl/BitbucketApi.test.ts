@@ -658,6 +658,20 @@ it.effect("never puts a saved token that is unsafe for an HTTP header on the wir
   }).pipe(Effect.provide(layer));
 });
 
+it.effect("reports a missing credential without contacting Bitbucket", () => {
+  const { execute, layer } = makeLayer({
+    response: () => new Response(null, { status: 401 }),
+    env: { T3CODE_BITBUCKET_API_BASE_URL: "https://api.test.local/2.0" },
+  });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+
+    assert.strictEqual((yield* bitbucket.probeAuth).status, "unauthenticated");
+    assert.strictEqual(execute.mock.calls.length, 0);
+  }).pipe(Effect.provide(layer));
+});
+
 it.effect("reports saved credentials as configured when Bitbucket cannot confirm them", () => {
   const { layer } = makeLayer({
     response: () => new Response(null, { status: 401 }),
