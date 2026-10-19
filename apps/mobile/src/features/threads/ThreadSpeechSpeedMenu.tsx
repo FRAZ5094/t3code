@@ -2,7 +2,8 @@ import type { MenuAction } from "@react-native-menu/menu";
 import { useMemo } from "react";
 import { Platform } from "react-native";
 
-import { ControlPill, ControlPillMenu } from "../../components/ControlPill";
+import { ControlPill } from "../../components/ui/ControlPill";
+import { Menu } from "../../components/ui/Menu";
 import { THREAD_SPEECH_RATES, type ThreadSpeechRate } from "./threadSpeech";
 
 export function ThreadSpeechSpeedMenu(props: {
@@ -24,11 +25,11 @@ export function ThreadSpeechSpeedMenu(props: {
   }
 
   return (
-    <ControlPillMenu
+    <Menu
       actions={actions}
       title="Speech speed"
-      onPressAction={(event) => {
-        const id = event.nativeEvent.event;
+      onPressAction={({ nativeEvent }) => {
+        const id = nativeEvent.event;
         const value = Number(id.slice("speech-rate:".length));
         if (THREAD_SPEECH_RATES.includes(value as ThreadSpeechRate)) {
           props.onChange(value as ThreadSpeechRate);
@@ -41,6 +42,6 @@ export function ThreadSpeechSpeedMenu(props: {
         label={`${props.rate}x`}
         variant="pill"
       />
-    </ControlPillMenu>
+    </Menu>
   );
 }

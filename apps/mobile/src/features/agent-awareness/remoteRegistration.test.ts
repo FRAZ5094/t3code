@@ -8,6 +8,7 @@ import Constants from "expo-constants";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import { Cookies, FetchHttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { ManagedRelay } from "@t3tools/client-runtime/relay";
@@ -392,26 +393,144 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     ).toEqual({ liveActivitiesEnabled: true, baseFontSize: 18 });
   });
 
-  it.effect("registers at most one listener while a Live Activity push token is pending", () => {
+  it.effect("registers one push-token listener per Live Activity across wrappers", () => {
     registerAgentAwarenessConnection(savedConnection());
     const addPushTokenListener = vi.fn();
-    const activity = {
+    // getInstances() returns a new wrapper for the same native activity each call.
+    const wrapper = () => ({
+      getId: () => "activity-1",
       getPushToken: vi.fn(() => Promise.resolve(null)),
       addPushTokenListener,
+    });
+
+    return Effect.gen(function* () {
+      expect(yield* registerLiveActivityPushToken({ activity: wrapper() as never })).toBe(false);
+      expect(yield* registerLiveActivityPushToken({ activity: wrapper() as never })).toBe(false);
+
+      expect(addPushTokenListener).toHaveBeenCalledTimes(1);
+    }).pipe(Effect.provide(layerRelayTest));
+  });
+
+  it.effect("registers a Live Activity push token that rotates after registration", () => {
+    const registeredTokens: Array<string> = [];
+    vi.stubGlobal("fetch", async (request: RequestInfo | URL, init?: RequestInit) => {
+      const url = request instanceof Request ? request.url : String(request);
+      if (url.endsWith("/v1/client/dpop-token")) {
+        return Response.json({
+          access_token: "relay-dpop-token",
+          issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+          token_type: "DPoP",
+          expires_in: 300,
+          scope: "mobile:registration",
+        });
+      }
+      if (url.endsWith("/v1/mobile/live-activities")) {
+        const body = request instanceof Request ? await request.text() : String(init?.body);
+        registeredTokens.push(
+          (JSON.parse(body) as { readonly activityPushToken: string }).activityPushToken,
+        );
+      }
+      return Response.json({ ok: true });
+    });
+    Constants.expoConfig!.extra = { relay: { url: "https://relay.example.test/" } };
+    setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"));
+    let tokenListener: ((event: { readonly pushToken: string }) => void) | undefined;
+    const activity = {
+      getId: () => "activity-1",
+      getPushToken: vi.fn(() => Promise.resolve("activity-token")),
+      addPushTokenListener: vi.fn((listener: typeof tokenListener) => {
+        tokenListener = listener;
+        return { remove: vi.fn() };
+      }),
     };
 
     return Effect.gen(function* () {
-      expect(yield* registerLiveActivityPushToken({ activity: activity as never })).toBe(false);
-      expect(yield* registerLiveActivityPushToken({ activity: activity as never })).toBe(false);
+      yield* runBackgroundOperations();
+      expect(yield* registerLiveActivityPushToken({ activity: activity as never })).toBe(true);
 
-      expect(activity.getPushToken).toHaveBeenCalledTimes(2);
-      expect(addPushTokenListener).toHaveBeenCalledTimes(1);
-    }).pipe(Effect.provide(layerRelayTest));
+      tokenListener?.({ pushToken: "rotated-activity-token" });
+      yield* runBackgroundOperations();
+
+      expect(registeredTokens).toEqual(["activity-token", "rotated-activity-token"]);
+    }).pipe(
+      Effect.provideService(FetchHttpClient.Fetch, globalThis.fetch),
+      Effect.provide(layerRelayTest),
+    );
+  });
+
+  it.effect("registers a rotated Live Activity token only after an older registration", () => {
+    const arrivals: Array<string> = [];
+    let openOldRequest: (() => void) | undefined;
+    const oldRequestGate = new Promise<void>((resolve) => {
+      openOldRequest = resolve;
+    });
+    let markOldRequestArrived: (() => void) | undefined;
+    const oldRequestArrived = new Promise<void>((resolve) => {
+      markOldRequestArrived = resolve;
+    });
+    vi.stubGlobal("fetch", async (request: RequestInfo | URL, init?: RequestInit) => {
+      const url = request instanceof Request ? request.url : String(request);
+      if (url.endsWith("/v1/client/dpop-token")) {
+        return Response.json({
+          access_token: "relay-dpop-token",
+          issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+          token_type: "DPoP",
+          expires_in: 300,
+          scope: "mobile:registration",
+        });
+      }
+      if (url.endsWith("/v1/mobile/live-activities")) {
+        const body = request instanceof Request ? await request.text() : String(init?.body);
+        const token = (JSON.parse(body) as { readonly activityPushToken: string })
+          .activityPushToken;
+        arrivals.push(token);
+        if (token === "activity-token") {
+          markOldRequestArrived?.();
+          await oldRequestGate;
+        }
+      }
+      return Response.json({ ok: true });
+    });
+    Constants.expoConfig!.extra = { relay: { url: "https://relay.example.test/" } };
+    setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"));
+    let tokenListener: ((event: { readonly pushToken: string }) => void) | undefined;
+    const activity = {
+      getId: () => "activity-1",
+      getPushToken: vi.fn(() => Promise.resolve("activity-token")),
+      addPushTokenListener: vi.fn((listener: typeof tokenListener) => {
+        tokenListener = listener;
+        return { remove: vi.fn() };
+      }),
+    };
+
+    return Effect.gen(function* () {
+      yield* runBackgroundOperations();
+      const lookup = yield* Effect.forkChild(
+        registerLiveActivityPushToken({ activity: activity as never }),
+      );
+      yield* Effect.promise(() => oldRequestArrived);
+
+      tokenListener?.({ pushToken: "rotated-activity-token" });
+      const listenerRegistration = yield* Effect.forkChild(runBackgroundOperations());
+      for (let pass = 0; pass < 5; pass++) {
+        yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)));
+      }
+      expect(arrivals).toEqual(["activity-token"]);
+
+      openOldRequest?.();
+      yield* Fiber.join(lookup);
+      yield* Fiber.join(listenerRegistration);
+      expect(arrivals).toEqual(["activity-token", "rotated-activity-token"]);
+    }).pipe(
+      Effect.provideService(FetchHttpClient.Fetch, globalThis.fetch),
+      Effect.provide(layerRelayTest),
+    );
   });
 
   it.effect("preserves Live Activity push-token lookup failures", () => {
     const cause = new Error("native token lookup failed");
     const activity = {
+      getId: () => "activity-1",
       getPushToken: vi.fn(() => Promise.reject(cause)),
       addPushTokenListener: vi.fn(),
     };
@@ -436,6 +555,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     () => {
       registerAgentAwarenessConnection(savedConnection());
       const activity = {
+        getId: () => "activity-1",
         getPushToken: vi.fn(() => Promise.resolve("activity-token")),
         addPushTokenListener: vi.fn(),
       };
@@ -450,6 +570,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     "registers APNS-started Live Activities for relay updates without mutating them locally",
     () => {
       const activity = {
+        getId: () => "activity-1",
         getPushToken: vi.fn(() => Promise.resolve("activity-token")),
         addPushTokenListener: vi.fn(),
         start: vi.fn(),
@@ -474,6 +595,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     "re-registers active Live Activity tokens when the app returns to the foreground",
     () => {
       const activity = {
+        getId: () => "activity-1",
         getPushToken: vi.fn(() => Promise.resolve("activity-token")),
         addPushTokenListener: vi.fn(),
       };
@@ -503,6 +625,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
   it("ends local Live Activities and stops foreground reconciliation on cloud sign-out", () => {
     const end = vi.fn(() => Promise.resolve());
     const activity = {
+      getId: () => "activity-1",
       getPushToken: vi.fn(() => Promise.resolve("activity-token")),
       addPushTokenListener: vi.fn(),
       end,
@@ -599,10 +722,6 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"));
 
     return Effect.gen(function* () {
-      // Drive the registration directly so the assertion does not depend on the
-      // background queue draining; refreshAgentAwarenessRegistration swallows the
-      // error but must record the failed status so the settings toggles cannot
-      // read as enabled.
       yield* refreshAgentAwarenessRegistration();
       expect(getAgentAwarenessRegistrationStatus()).toBe("failed");
     }).pipe(Effect.provide(layerRelayTest));
@@ -618,6 +737,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
   it("releases the provider without ending activities or clearing the registration", () => {
     const end = vi.fn(() => Promise.resolve());
     const activity = {
+      getId: () => "activity-1",
       getPushToken: vi.fn(() => Promise.resolve("activity-token")),
       addPushTokenListener: vi.fn(),
       end,
@@ -636,8 +756,6 @@ describe("makeRelayDeviceRegistrationRequest", () => {
   });
 
   it.effect("resets a pending status to unknown when relay config is missing", () => {
-    // No relay url configured: registration can neither run nor ever succeed,
-    // so the status must not stick at "pending".
     setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"));
 
     return Effect.gen(function* () {
@@ -658,8 +776,6 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       yield* runBackgroundOperations();
       expect(getAgentAwarenessRegistrationStatus()).toBe("registered");
 
-      // The relay still holds the accepted registration; a transient refresh
-      // failure must not flip the settings toggles off.
       vi.mocked(loadOrCreateAgentAwarenessDeviceId).mockRejectedValueOnce(
         new Error("transient failure"),
       );
@@ -682,8 +798,6 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       expect(saveAgentAwarenessRegistrationRecord).toHaveBeenCalledTimes(1);
       expect(registrationRecordStore.current).not.toBeNull();
 
-      // Second attempt with an identical payload must skip the relay entirely,
-      // so no new registration record is written.
       vi.mocked(saveAgentAwarenessRegistrationRecord).mockClear();
       yield* refreshAgentAwarenessRegistration();
       expect(getAgentAwarenessRegistrationStatus()).toBe("registered");
@@ -719,6 +833,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       },
     };
     const activity = {
+      getId: () => "activity-1",
       getPushToken: vi.fn(() => Promise.resolve("activity-token")),
       addPushTokenListener: vi.fn(),
     };
@@ -726,13 +841,9 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"));
 
     return Effect.gen(function* () {
-      // Drains the sign-in refresh, which registers the activity token.
       yield* runBackgroundOperations();
       expect(activity.getPushToken).toHaveBeenCalled();
 
-      // A burst refresh (foreground / connection update seconds later) must
-      // dedupe: it reads the token but never proceeds to a registration
-      // attempt (which would load the device id first).
       vi.mocked(loadOrCreateAgentAwarenessDeviceId).mockClear();
       yield* refreshActiveLiveActivityRemoteRegistration();
       expect(loadOrCreateAgentAwarenessDeviceId).not.toHaveBeenCalled();
@@ -931,8 +1042,6 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(widgetMocks.start).toHaveBeenCalledTimes(1);
 
-    // An environment without the capability may run an older server that
-    // still publishes; only an explicit false skips the seed.
     widgetMocks.start.mockClear();
     vi.mocked(loadPreferences).mockResolvedValueOnce({
       liveActivitiesEnabled: true,
