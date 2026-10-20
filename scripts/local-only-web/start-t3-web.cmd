@@ -8,8 +8,11 @@ rem One-time setup from the repository root:
 rem   pnpm install
 rem   pnpm exec vp run --filter t3 build
 rem Double-click this file afterwards. Close the window to stop the server.
+rem It also runs from the root of a folder made by build-portable.ts, which
+rem needs no setup beyond Node.
 setlocal
-cd /d "%~dp0..\.."
+cd /d "%~dp0"
+if not exist "apps\server\dist\bin.mjs" cd /d "%~dp0..\.."
 
 where node >nul 2>nul
 if errorlevel 1 goto missing_node

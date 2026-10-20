@@ -3,7 +3,9 @@
 # this checkout with T3 Code's own outbound requests turned off. Provider CLIs
 # still reach their own services. Double-click it in Finder or run it from a
 # shell after `pnpm install` and `pnpm exec vp run --filter t3 build`.
-cd "$(dirname "$0")/../.." || exit 1
+# It also runs from the root of a folder made by build-portable.ts.
+cd "$(dirname "$0")" || exit 1
+[ -f apps/server/dist/bin.mjs ] || cd ../.. || exit 1
 
 if [ ! -f apps/server/dist/bin.mjs ]; then
   echo "T3 Code is not built yet. In $(pwd) run:"
