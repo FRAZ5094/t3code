@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import type { ServerProvider } from "@t3tools/contracts";
 import { CircleCheckIcon, DownloadIcon, TriangleAlertIcon, XIcon } from "lucide-react";
+import { T, useGT, useMessages } from "gt-react";
 import { useEffect, useEffectEvent, useState, type CSSProperties } from "react";
 
 import { primaryServerProvidersAtom } from "../../state/server";
@@ -11,6 +12,9 @@ import {
   type ProviderUpdateSidebarPillView,
 } from "../ProviderUpdateLaunchNotification.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+
+// Matches the pill's `duration-180` class.
+const PROVIDER_UPDATE_PILL_EXIT_MS = 180;
 
 const PROVIDER_UPDATE_PILL_STYLES = {
   loading:
@@ -40,6 +44,8 @@ function latestProviderCheckedAt(
 }
 
 export function SidebarProviderUpdatePill() {
+  const gt = useGT();
+  const messages = useMessages();
   const navigate = useNavigate();
   const providers = useAtomValue(primaryServerProvidersAtom);
   const [dismissedKeys, setDismissedKeys] = useState<ReadonlySet<string>>(() => new Set());
@@ -49,12 +55,16 @@ export function SidebarProviderUpdatePill() {
   const [dismissAfterExitKey, setDismissAfterExitKey] = useState<string | null>(null);
   const [visibleAfterIso, setVisibleAfterIso] = useState<string | undefined>();
   const effectiveVisibleAfterIso = visibleAfterIso ?? latestProviderCheckedAt(providers);
-  const view = getProviderUpdateSidebarPillView(providers, {
-    ...(effectiveVisibleAfterIso !== undefined
-      ? { visibleAfterIso: effectiveVisibleAfterIso }
-      : {}),
-    dismissedKeys,
-  });
+  const view = getProviderUpdateSidebarPillView(
+    providers,
+    {
+      ...(effectiveVisibleAfterIso !== undefined
+        ? { visibleAfterIso: effectiveVisibleAfterIso }
+        : {}),
+      dismissedKeys,
+    },
+    messages,
+  );
 
   if (visibleAfterIso === undefined && effectiveVisibleAfterIso !== undefined) {
     setVisibleAfterIso(effectiveVisibleAfterIso);
@@ -63,7 +73,7 @@ export function SidebarProviderUpdatePill() {
   const openProviderSettings = () => {
     void navigate({ to: "/settings/providers" });
   };
-  const displayedView = renderedView ?? view;
+  const displayedView = renderedView?.key === view?.key ? view : (renderedView ?? view);
   const dismissAfterVisibleMs = displayedView?.dismissAfterVisibleMs;
   const viewKey = displayedView?.key ?? null;
   const showDismissProgress =
@@ -98,6 +108,25 @@ export function SidebarProviderUpdatePill() {
 
   const exitAfterVisible = useEffectEvent((key: string) => startExit(key, null, key));
 
+  const finishExit = useEffectEvent(() => {
+    if (dismissAfterExitKey !== null) {
+      setDismissedKeys((previous) => new Set(previous).add(dismissAfterExitKey));
+    }
+    setRenderedView(pendingView);
+    setPendingView(null);
+    setExitingKey(null);
+    setDismissAfterExitKey(null);
+  });
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- fallback timer that finishes the exit if the CSS transition never ends
+  useEffect(() => {
+    if (exitingKey === null) return;
+    // A cancelled or skipped CSS transition must not keep a hidden spinner mounted.
+    const timeoutId = window.setTimeout(finishExit, PROVIDER_UPDATE_PILL_EXIT_MS);
+    return () => window.clearTimeout(timeoutId);
+  }, [exitingKey]);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- timer that dismisses the pill after it has been visible for dismissAfterVisibleMs
   useEffect(() => {
     if (!dismissAfterVisibleMs || !viewKey) {
       return;
@@ -125,21 +154,6 @@ export function SidebarProviderUpdatePill() {
           ? "pointer-events-none translate-y-1.5 opacity-0"
           : "translate-y-0 opacity-100"
       }`}
-      onTransitionEnd={(event) => {
-        if (event.target !== event.currentTarget) {
-          return;
-        }
-        if (!displayedView || exitingKey !== displayedView.key) {
-          return;
-        }
-        if (dismissAfterExitKey === displayedView.key) {
-          setDismissedKeys((previous) => new Set(previous).add(displayedView.key));
-        }
-        setRenderedView(pendingView);
-        setPendingView(null);
-        setExitingKey(null);
-        setDismissAfterExitKey(null);
-      }}
     >
       {showDismissProgress ? (
         <div
@@ -187,7 +201,7 @@ export function SidebarProviderUpdatePill() {
             render={
               <button
                 type="button"
-                aria-label="Dismiss provider update notice"
+                aria-label={gt("Dismiss provider update notice")}
                 className="relative z-[1] mr-1 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md opacity-70 outline-none hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                 onClick={() => startExit(displayedView.key, null, displayedView.key)}
               >
@@ -195,7 +209,9 @@ export function SidebarProviderUpdatePill() {
               </button>
             }
           />
-          <TooltipPopup side="top">Dismiss until provider status changes</TooltipPopup>
+          <TooltipPopup side="top">
+            <T>Dismiss until provider status changes</T>
+          </TooltipPopup>
         </Tooltip>
       )}
     </div>

@@ -202,7 +202,7 @@ describe("direct push registration", () => {
               projects: [project],
               updatedAt: "2026-10-08T12:00:00.000Z",
             }),
-            getById: () => Effect.succeed(Option.some(project)),
+            getById: () => Effect.succeedSome(project),
           },
           threads: {
             getShellSnapshot: () =>
@@ -256,7 +256,7 @@ describe("direct push registration", () => {
       const harness = setup({
         projects: {
           snapshot: Effect.succeed({ projects: [project], updatedAt: "2026-10-08T12:00:00.000Z" }),
-          getById: () => Effect.succeed(Option.some(project)),
+          getById: () => Effect.succeedSome(project),
         },
         threads: {
           getShellSnapshot: () =>

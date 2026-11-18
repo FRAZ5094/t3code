@@ -1,4 +1,5 @@
 import * as Dialog from "../../components/ui/Dialog";
+import { useAtomValue } from "@effect/atom-react";
 import type { MenuAction } from "@react-native-menu/menu";
 import {
   DEFAULT_PREVIEW_ZOOM_FACTOR,
@@ -10,20 +11,25 @@ import {
   type PreviewViewportSetting,
 } from "@t3tools/contracts";
 import { PREVIEW_VIEWPORT_PRESETS } from "@t3tools/shared/previewViewport";
+import { msg, useGT, useMessages } from "gt-react-native";
 
 import { ControlPill } from "../../components/ui/ControlPill";
 import { Menu } from "../../components/ui/Menu";
+import { m } from "../../i18n/messages";
 import { previewEnvironment } from "../../state/preview";
 import { useAtomCommand } from "../../state/use-atom-command";
 
 const APPEARANCES = [
-  { id: "system", title: "System" },
-  { id: "light", title: "Light" },
-  { id: "dark", title: "Dark" },
+  {
+    id: "system",
+    title: msg("System", { $context: "appearance option, follow the system theme" }),
+  },
+  { id: "light", title: msg("Light", { $context: "appearance option" }) },
+  { id: "dark", title: msg("Dark", { $context: "appearance option" }) },
 ] as const;
 
 const VIEWPORTS = [
-  { id: "fill", title: "Fit to screen", setting: FILL_PREVIEW_VIEWPORT },
+  { id: "fill", title: msg("Fit to screen"), setting: FILL_PREVIEW_VIEWPORT },
   ...(["Phone", "Tablet", "Desktop"] as const).flatMap((category) => {
     const preset = PREVIEW_VIEWPORT_PRESETS.find((candidate) => candidate.category === category);
     if (!preset) return [];
@@ -33,23 +39,33 @@ const VIEWPORTS = [
       width: preset.width,
       height: preset.height,
     };
-    return [{ id: `preset:${preset.id}`, title: `${category} (${preset.label})`, setting }];
+    const title =
+      category === "Phone"
+        ? msg("Phone ({device})", { device: preset.label })
+        : category === "Tablet"
+          ? msg("Tablet ({device})", { device: preset.label })
+          : msg("Desktop ({device})", { device: preset.label });
+    return [{ id: `preset:${preset.id}`, title, setting }];
   }),
 ];
 
 export function BrowserTabMenu({
   environmentId,
   tab,
-  disabled,
+  streaming,
   onPaste,
 }: {
   readonly environmentId: EnvironmentId;
   readonly tab: PreviewSessionSnapshot;
-  readonly disabled: boolean;
+  readonly streaming: boolean;
   readonly onPaste?: () => void;
 }) {
   const adjust = useAtomCommand(previewEnvironment.adjust, "browser tab change");
   const resize = useAtomCommand(previewEnvironment.resize, "browser viewport change");
+  const close = useAtomCommand(previewEnvironment.close, "browser tab close");
+  const canClose = useAtomValue(previewEnvironment.close.permissionAtom(environmentId));
+  const gt = useGT();
+  const resolveMessage = useMessages();
   const target = { threadId: tab.threadId as PreviewAdjustInput["threadId"], tabId: tab.tabId };
   const colorScheme = tab.colorScheme ?? "system";
   const zoomFactor = tab.zoomFactor ?? DEFAULT_PREVIEW_ZOOM_FACTOR;
@@ -65,56 +81,71 @@ export function BrowserTabMenu({
         ? `preset:${tab.viewport.presetId}`
         : "custom";
 
+  const closeAction: MenuAction = {
+    id: "close",
+    title: gt("Close tab"),
+    image: "xmark",
+    attributes: { destructive: true, disabled: !canClose },
+  };
   const actions: MenuAction[] = [
-    ...(onPaste ? [{ id: "paste", title: "Paste", image: "doc.on.clipboard" }] : []),
-    { id: "hard-reload", title: "Hard reload", image: "arrow.clockwise.circle" },
+    ...(onPaste
+      ? [{ id: "paste", title: gt("Paste", { $context: "verb" }), image: "doc.on.clipboard" }]
+      : []),
+    { id: "hard-reload", title: gt("Hard reload"), image: "arrow.clockwise.circle" },
     {
       id: "appearance",
-      title: "Appearance",
+      title: gt("Appearance"),
       image: "circle.lefthalf.filled",
       subactions: APPEARANCES.map((option) => ({
         id: `appearance:${option.id}`,
-        title: option.title,
+        title: resolveMessage(option.title),
         state: option.id === colorScheme ? "on" : "off",
       })),
     },
     {
       id: "zoom",
-      title: `Zoom (${Math.round(zoomFactor * 100)}%)`,
+      title: gt("Zoom ({percent}%)", { percent: Math.round(zoomFactor * 100) }),
       image: "plus.magnifyingglass",
       subactions: [
-        { id: "zoom:in", title: "Zoom in", image: "plus.magnifyingglass" },
-        { id: "zoom:out", title: "Zoom out", image: "minus.magnifyingglass" },
-        { id: "zoom:reset", title: "Actual size", image: "1.magnifyingglass" },
+        { id: "zoom:in", title: gt("Zoom in"), image: "plus.magnifyingglass" },
+        { id: "zoom:out", title: gt("Zoom out"), image: "minus.magnifyingglass" },
+        { id: "zoom:reset", title: gt("Actual size"), image: "1.magnifyingglass" },
       ],
     },
     {
       id: "viewport",
-      title: "Viewport",
+      title: gt("Viewport"),
       image: "rectangle.and.arrow.up.right.and.arrow.down.left",
       subactions: VIEWPORTS.map((option) => ({
         id: `viewport:${option.id}`,
-        title: option.title,
+        title: resolveMessage(option.title),
         state: option.id === viewportId ? "on" : "off",
       })),
     },
     {
       id: "site-data",
-      title: "Site data",
+      title: gt("Site data"),
       image: "trash",
       subactions: [
-        { id: "clear:cookies", title: "Clear cookies", attributes: { destructive: true } },
-        { id: "clear:cache", title: "Clear cache", attributes: { destructive: true } },
+        { id: "clear:cookies", title: gt("Clear cookies"), attributes: { destructive: true } },
+        { id: "clear:cache", title: gt("Clear cache"), attributes: { destructive: true } },
       ],
     },
+    closeAction,
   ];
 
   const run = async (change: Omit<PreviewAdjustInput, "threadId" | "tabId">) => {
     const result = await adjust({ environmentId, input: { ...target, ...change } });
-    if (result._tag === "Failure") Dialog.alert("Could not change this browser tab");
+    if (result._tag === "Failure") Dialog.alert(m(msg("Could not change this browser tab")));
   };
 
   const onAction = (id: string) => {
+    if (id === "close") {
+      void close({ environmentId, input: target }).then((result) => {
+        if (result._tag === "Failure") Dialog.alert(m(msg("Could not close this browser tab")));
+      });
+      return;
+    }
     if (id === "paste") return onPaste?.();
     if (id === "hard-reload") return void run({ hardReload: true });
     if (id === "zoom:in") return void run({ zoomFactor: zoomTo(1) });
@@ -132,25 +163,24 @@ export function BrowserTabMenu({
       if (!option) return;
       void resize({ environmentId, input: { ...target, viewport: option.setting } }).then(
         (result) => {
-          if (result._tag === "Failure") Dialog.alert("Could not change the viewport");
+          if (result._tag === "Failure") Dialog.alert(m(msg("Could not change the viewport")));
         },
       );
     }
   };
 
-  const pill = (
-    <ControlPill icon="ellipsis" accessibilityLabel="Browser tab options" disabled={disabled} />
-  );
-  if (disabled) return pill;
   return (
     <Menu
+      // Remount when streaming changes, so an open menu never keeps offering
+      // the other state's actions.
+      key={streaming ? "streaming" : "idle"}
       accessible
-      accessibilityLabel="Browser tab options"
+      accessibilityLabel={gt("Browser tab options")}
       accessibilityRole="button"
-      actions={actions}
+      actions={streaming ? actions : [closeAction]}
       onPressAction={({ nativeEvent }) => onAction(nativeEvent.event)}
     >
-      {pill}
+      <ControlPill icon="ellipsis" accessibilityLabel={gt("Browser tab options")} />
     </Menu>
   );
 }

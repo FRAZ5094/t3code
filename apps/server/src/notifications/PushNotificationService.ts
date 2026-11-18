@@ -120,28 +120,29 @@ export const make = Effect.gen(function* () {
       Effect.mapError(() => pushError("register", "Could not persist the device registration.")),
     );
 
-  const register: PushNotificationService["Service"]["register"] = (input) =>
-    Effect.gen(function* () {
-      // Validate sender configuration before claiming this environment can deliver.
-      yield* fcm.checkConfiguration.pipe(
-        Effect.mapError(() =>
-          pushError(
-            "register",
-            "Set T3CODE_FCM_SERVICE_ACCOUNT_FILE on this environment to enable Android notifications.",
-          ),
+  const register: PushNotificationService["Service"]["register"] = Effect.fn("register")(function* (
+    input,
+  ) {
+    // Validate sender configuration before claiming this environment can deliver.
+    yield* fcm.checkConfiguration.pipe(
+      Effect.mapError(() =>
+        pushError(
+          "register",
+          "Set T3CODE_FCM_SERVICE_ACCOUNT_FILE on this environment to enable Android notifications.",
         ),
-      );
-      const current = yield* Ref.get(registrationsRef);
-      const next = new Map(current);
-      next.set(input.deviceId, input);
-      yield* persistRegistrations(next);
-      yield* Ref.set(registrationsRef, next);
-      yield* deliveryWorker.enqueue({ replayDeviceId: input.deviceId });
-      return { registered: true } as const;
-    }).pipe(registrationLock.withPermit);
+      ),
+    );
+    const current = yield* Ref.get(registrationsRef);
+    const next = new Map(current);
+    next.set(input.deviceId, input);
+    yield* persistRegistrations(next);
+    yield* Ref.set(registrationsRef, next);
+    yield* deliveryWorker.enqueue({ replayDeviceId: input.deviceId });
+    return { registered: true } as const;
+  }, registrationLock.withPermit);
 
-  const unregister: PushNotificationService["Service"]["unregister"] = (input) =>
-    Effect.gen(function* () {
+  const unregister: PushNotificationService["Service"]["unregister"] = Effect.fn("unregister")(
+    function* (input) {
       const current = yield* Ref.get(registrationsRef);
       if (!current.has(input.deviceId)) {
         return;
@@ -154,21 +155,22 @@ export const make = Effect.gen(function* () {
         ),
       );
       yield* Ref.set(registrationsRef, next);
-    }).pipe(registrationLock.withPermit);
+    },
+    registrationLock.withPermit,
+  );
 
-  const readThreadState = (threadId: ThreadId) =>
-    Effect.gen(function* () {
-      const thread = yield* threads.getThreadShell(threadId);
-      if (thread === null || thread.archivedAt !== null) return null;
-      const project = yield* projects.getById(thread.projectId);
-      if (Option.isNone(project)) return null;
-      const state = projectThreadAwarenessV2({
-        environmentId: yield* serverEnvironment.getEnvironmentId,
-        project: project.value,
-        thread,
-      });
-      return state === null ? null : { state, thread };
+  const readThreadState = Effect.fn("readThreadState")(function* (threadId: ThreadId) {
+    const thread = yield* threads.getThreadShell(threadId);
+    if (thread === null || thread.archivedAt !== null) return null;
+    const project = yield* projects.getById(thread.projectId);
+    if (Option.isNone(project)) return null;
+    const state = projectThreadAwarenessV2({
+      environmentId: yield* serverEnvironment.getEnvironmentId,
+      project: project.value,
+      thread,
     });
+    return state === null ? null : { state, thread };
+  });
 
   const readAssistantMessageText = (
     thread: NonNullable<Effect.Success<ReturnType<typeof readThreadState>>>["thread"],

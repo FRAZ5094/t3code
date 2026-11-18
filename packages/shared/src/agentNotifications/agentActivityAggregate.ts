@@ -87,11 +87,9 @@ export function makeAggregateState(input: {
     if (input.terminalState !== null) {
       return terminalAggregateState(input.terminalState);
     }
-    // With no live work, recently finished threads keep the card showing
-    // Done/Failed content (an armed card never renders an empty state). The
-    // newly-terminal alert rules key off the previously delivered aggregate,
-    // so replays repaint this without buzzing. Once the terminal rows age
-    // out, the aggregate is null and the delivery layer ends the card.
+    // Recent finishes keep the card on Done/Failed, since an armed card never renders empty.
+    // Alerts compare with the delivered aggregate; replays must repaint without buzzing. Once the
+    // rows age out, the aggregate is null and the delivery layer ends the card.
     const recentTerminal = input.activeStates
       .filter((state) => isRecentTerminalState(state, input.nowMs))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
