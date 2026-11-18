@@ -1,15 +1,17 @@
 import type { MenuAction } from "@react-native-menu/menu";
+import { useGT } from "gt-react-native";
 import { useMemo } from "react";
 import { Platform } from "react-native";
 
 import { ControlPill } from "../../components/ui/ControlPill";
 import { Menu } from "../../components/ui/Menu";
-import { THREAD_SPEECH_RATES, type ThreadSpeechRate } from "./threadSpeech";
+import { THREAD_SPEECH_RATES, type ThreadSpeechRate } from "@t3tools/contracts";
 
 export function ThreadSpeechSpeedMenu(props: {
   readonly rate: ThreadSpeechRate;
   readonly onChange: (rate: ThreadSpeechRate) => void;
 }) {
+  const gt = useGT();
   const actions = useMemo<MenuAction[]>(
     () =>
       THREAD_SPEECH_RATES.map((rate) => ({
@@ -27,7 +29,7 @@ export function ThreadSpeechSpeedMenu(props: {
   return (
     <Menu
       actions={actions}
-      title="Speech speed"
+      title={gt("Speech speed")}
       onPressAction={({ nativeEvent }) => {
         const id = nativeEvent.event;
         const value = Number(id.slice("speech-rate:".length));
@@ -37,7 +39,7 @@ export function ThreadSpeechSpeedMenu(props: {
       }}
     >
       <ControlPill
-        accessibilityLabel={`Speech speed, ${props.rate}x`}
+        accessibilityLabel={gt("Speech speed, {rate}x", { rate: props.rate })}
         icon="textformat.size"
         label={`${props.rate}x`}
         variant="pill"

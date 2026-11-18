@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from "@effect/vitest";
 
+import { THREAD_SPEECH_RATES } from "@t3tools/contracts";
+
 import {
-  THREAD_SPEECH_RATES,
   ThreadSpeechQueue,
   resolveThreadSpeechRate,
   speechText,
   type ThreadSpeechEngine,
   type ThreadSpeechSpeakOptions,
-} from "./threadSpeech";
+} from "./threadSpeech.ts";
 
 interface SpeechCall {
   readonly text: string;

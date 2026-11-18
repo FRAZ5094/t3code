@@ -6,14 +6,12 @@ import { Platform } from "react-native";
 
 import type { ThreadFeedEntry } from "../../lib/threadActivity";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
+import type { ThreadSpeechRate } from "@t3tools/contracts";
 import {
   ThreadSpeechQueue,
   type ThreadSpeechEngine,
-  type ThreadSpeechRate,
   resolveThreadSpeechRate,
-} from "./threadSpeech";
-
-export { THREAD_SPEECH_RATES, type ThreadSpeechRate } from "./threadSpeech";
+} from "@t3tools/client-runtime/thread-speech";
 
 function createAndroidSpeechEngine(): ThreadSpeechEngine {
   return {
@@ -42,30 +40,18 @@ export function useThreadSpeech(
   const storedPreferences = AsyncResult.isSuccess(preferencesResult)
     ? preferencesResult.value
     : null;
-  const [enabled, setEnabled] = useState(false);
-  const [rate, setRate] = useState<ThreadSpeechRate>(1);
-  const enabledRef = useRef(false);
-  const preferenceInitializedRef = useRef(false);
-
-  useEffect(() => {
-    if (preferenceInitializedRef.current || !storedPreferences) {
-      return;
-    }
-    preferenceInitializedRef.current = true;
-    enabledRef.current = storedPreferences.readAloudEnabled === true;
-    setEnabled(storedPreferences.readAloudEnabled === true);
-    setRate(resolveThreadSpeechRate(storedPreferences.readAloudRate));
-  }, [storedPreferences]);
-
-  useEffect(() => {
-    enabledRef.current = enabled;
-  }, [enabled]);
+  // A choice made on this screen wins over the stored value, which loads asynchronously.
+  const [enabledChoice, setEnabledChoice] = useState<boolean | null>(null);
+  const [rateChoice, setRateChoice] = useState<ThreadSpeechRate | null>(null);
+  const enabled = enabledChoice ?? storedPreferences?.readAloudEnabled === true;
+  const rate = rateChoice ?? resolveThreadSpeechRate(storedPreferences?.readAloudRate);
 
   const speechEngine = useMemo(() => (isAndroid ? createAndroidSpeechEngine() : null), [isAndroid]);
   const queueRef = useRef<ThreadSpeechQueue | null>(null);
 
   // Keep queue construction in an effect so React's development-only effect
   // replay gets a fresh queue after the first one is disposed.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Owns the native speech queue while the thread screen is mounted and stops speech on unmount.
   useEffect(() => {
     if (speechEngine === null) {
       return;
@@ -96,6 +82,7 @@ export function useThreadSpeech(
     [feed],
   );
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Feeds the speech queue, which lives outside React, the thread's latest assistant text.
   useEffect(() => {
     queueRef.current?.update(assistantMessages, enabled, rate, { threadKey, sourceThreadKey });
   }, [assistantMessages, enabled, rate, sourceThreadKey, threadKey]);
@@ -104,21 +91,18 @@ export function useThreadSpeech(
     if (!isAndroid) {
       return;
     }
-    preferenceInitializedRef.current = true;
-    const next = !enabledRef.current;
-    enabledRef.current = next;
+    const next = !enabled;
     queueRef.current?.update(assistantMessages, next, rate, { threadKey, sourceThreadKey });
-    setEnabled(next);
+    setEnabledChoice(next);
     savePreferences({ readAloudEnabled: next });
-  }, [assistantMessages, isAndroid, rate, savePreferences, sourceThreadKey, threadKey]);
+  }, [assistantMessages, enabled, isAndroid, rate, savePreferences, sourceThreadKey, threadKey]);
 
   const setSpeechRate = useCallback(
     (next: ThreadSpeechRate) => {
       if (!isAndroid) {
         return;
       }
-      preferenceInitializedRef.current = true;
-      setRate(next);
+      setRateChoice(next);
       savePreferences({ readAloudRate: next });
     },
     [isAndroid, savePreferences],

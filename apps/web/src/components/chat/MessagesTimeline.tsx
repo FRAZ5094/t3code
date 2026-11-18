@@ -141,6 +141,7 @@ import {
 } from "./timelineViewport";
 import { useThreadFindPositionReader } from "./useThreadFindPositionReader";
 import { ThreadActivityAnnouncer } from "./ThreadActivityAnnouncer";
+import { ThreadReadAloud } from "./ThreadReadAloud";
 import { useStableHandoffRuns, useIncrementalTimelineRows, useStableRows } from "./useTimelineRows";
 import { useClientSettings } from "../../hooks/useSettings";
 
@@ -264,6 +265,8 @@ interface MessagesTimelineProps {
   displayThreadKey?: string;
   /** Off where another region already speaks the thread's status, like a subagent's bar. */
   announceTurnStatus?: boolean;
+  /** On for the main thread view only, since the window has one speech voice. */
+  readAloud?: boolean;
   onOpenToolDiff?: (target: ToolCallDiffTarget) => void;
   onOpenTurnDiff?: (runId: RunId, filePath?: string) => void;
   onOpenThread: (
@@ -382,6 +385,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   routeThreadKey,
   displayThreadKey,
   announceTurnStatus = true,
+  readAloud = false,
   onOpenToolDiff,
   onOpenTurnDiff,
   onOpenThread,
@@ -1188,17 +1192,20 @@ const ConversationTimeline = memo(function ConversationTimeline({
   // Mounted in both the empty and filled timeline so a thread's first turn
   // starts from a baseline instead of a fresh, silent region.
   const activityAnnouncer = (
-    <ThreadActivityAnnouncer
-      threadKey={announceTurnStatus ? listIdentityKey : null}
-      status={awaitingUser ?? (isWorking ? "working" : "idle")}
-      requestId={awaitingRequestId}
-      runId={announcedRun?.runId ?? null}
-      runStatus={announcedRun?.status ?? null}
-      detailBehind={detailBehindShell}
-      level={screenReaderAnnouncements}
-      entries={screenReaderAnnouncements === "status" ? EMPTY_TIMELINE_ENTRIES : timelineEntries}
-      workspaceRoot={workspaceRoot}
-    />
+    <>
+      <ThreadActivityAnnouncer
+        threadKey={announceTurnStatus ? listIdentityKey : null}
+        status={awaitingUser ?? (isWorking ? "working" : "idle")}
+        requestId={awaitingRequestId}
+        runId={announcedRun?.runId ?? null}
+        runStatus={announcedRun?.status ?? null}
+        detailBehind={detailBehindShell}
+        level={screenReaderAnnouncements}
+        entries={screenReaderAnnouncements === "status" ? EMPTY_TIMELINE_ENTRIES : timelineEntries}
+        workspaceRoot={workspaceRoot}
+      />
+      {readAloud ? <ThreadReadAloud threadKey={listIdentityKey} entries={timelineEntries} /> : null}
+    </>
   );
   const listHeaderLeadingContent =
     parentThreadLink === null ? (

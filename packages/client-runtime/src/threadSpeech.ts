@@ -1,6 +1,4 @@
-export const THREAD_SPEECH_RATES = [1, 1.5, 2, 2.5, 3] as const;
-
-export type ThreadSpeechRate = (typeof THREAD_SPEECH_RATES)[number];
+import { THREAD_SPEECH_RATES, type ThreadSpeechRate } from "@t3tools/contracts";
 
 const DEFAULT_THREAD_SPEECH_RATE: ThreadSpeechRate = 1;
 const MIN_STREAM_CHUNK_LENGTH = 100;
@@ -52,7 +50,7 @@ export function resolveThreadSpeechRate(value: unknown): ThreadSpeechRate {
 }
 
 /**
- * Keep the transcript readable when markdown syntax reaches Android's speech
+ * Keep the transcript readable when markdown syntax reaches the speech
  * engine. The source offsets remain based on the original text so streaming
  * deltas can be tracked without re-speaking content.
  */
@@ -97,8 +95,8 @@ function findChunkEnd(text: string, start: number, streaming: boolean): number |
 }
 
 /**
- * Serializes Android speech for one thread. Only one utterance is handed to
- * the native engine at a time; later stream chunks stay in this queue until
+ * Serializes speech for one thread. Only one utterance is handed to
+ * the engine at a time; later stream chunks stay in this queue until
  * the engine reports that the current utterance is complete.
  */
 export class ThreadSpeechQueue {
@@ -115,8 +113,11 @@ export class ThreadSpeechQueue {
   private nextSpeechToken = 0;
   private stopPromise: Promise<void> | null = null;
   private disposed = false;
+  private readonly engine: ThreadSpeechEngine;
 
-  constructor(private readonly engine: ThreadSpeechEngine) {}
+  constructor(engine: ThreadSpeechEngine) {
+    this.engine = engine;
+  }
 
   update(
     messages: ReadonlyArray<ThreadSpeechMessage>,

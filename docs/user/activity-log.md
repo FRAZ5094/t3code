@@ -48,3 +48,11 @@ window title** in the same section. The window title then starts with the thread
 screen reader says them first. When the turn ends, only the status goes away.
 Anyone who can see your taskbar, window switcher, or shared screen sees it too, and time trackers
 that group by window title count each status separately.
+
+## Read aloud
+
+To hear the agent's replies without a screen reader, click the speaker button at the top right of a
+thread on web or desktop, or in the thread header on Android. Reading starts with the latest reply
+and follows new ones as the agent writes them. Choose a speed from **1x** to **3x** next to the
+button. Sending a message stops the current reply, and reading picks up with the next one. Replies
+use your system's voice. The setting applies to this browser or device only.
